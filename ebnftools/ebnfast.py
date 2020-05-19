@@ -9,10 +9,11 @@
 import re
 
 class Expression(object):
-    def paren(self, expr):
+    _explicit_paren = False
 
+    def paren(self, expr):
         # lower precedence value indicates higher precedence
-        if expr.precedence <= self.precedence:
+        if (not expr._explicit_paren) and (expr.precedence <= self.precedence):
             return str(expr)
         else:
             return f"({expr})"
@@ -56,7 +57,7 @@ class Optional(Expression):
         self.expr = expr
 
     def __str__(self):
-        return f"{self.paren(self.expr[0])}?"
+        return f"{self.paren(self.expr)}?"
 
 class BinOp(Expression):
     op = None
@@ -294,6 +295,7 @@ class EBNFParser(object):
         elif tkn == 'LPAREN':
             expr = self.parse_expr(token_stream)
             token_stream.expect('RPAREN')
+            expr._explicit_paren = True
             return expr
         else:
             print(f"Unmatched {tkn}/{match} when parsing term")
@@ -335,6 +337,8 @@ Char	   ::=   	#x9 | #xA | #xD | [#x20-#xD7FF] | [#xE000-#xFFFD] | [#x10000-#x10
 S	   ::=   	(#x20 | #x9 | #xD | #xA)+
 
 Comment	   ::=   	'<!--' ((Char - '-') | ('-' (Char - '-')))* '-->'
+
+content	   ::=   	CharData? ((element | Reference | CDSect | PI | Comment) CharData?)*
 ''')
     for xx in x:
         print(xx)
