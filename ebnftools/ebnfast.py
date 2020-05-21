@@ -10,6 +10,7 @@ import re
 
 class Expression(object):
     _explicit_paren = False
+    children = []
 
     def paren(self, expr):
         # lower precedence value indicates higher precedence
@@ -26,6 +27,9 @@ class Symbol(Expression):
     def __str__(self):
         return self.value
 
+    def graph(self):
+        return (str(self), [])
+
 class Char(Expression):
     precedence = 0
     def __init__(self, v):
@@ -34,13 +38,19 @@ class Char(Expression):
     def __str__(self):
         return f"#x{self.value:x}"
 
+    def graph(self):
+        return (str(self), [])
+
 class String(Expression):
     precedence = 0
     def __init__(self, v):
         self.value = v
 
     def __str__(self):
-        return repr(self.value)
+        return "'" + self.value + "'"
+
+    def graph(self):
+        return (str(self), [])
 
 class CharClass(Expression):
     precedence = 0
@@ -50,24 +60,34 @@ class CharClass(Expression):
     def __str__(self):
         return f"[{''.join([str(s) for s in self.c_and_r])}]"
 
+    def graph(self):
+        return (str(self), [])
+
 class Optional(Expression):
     precedence = 0
 
     def __init__(self, expr):
         self.expr = expr
+        self.children = [self.expr]
 
     def __str__(self):
         return f"{self.paren(self.expr)}?"
+
+    def graph(self):
+        return ("?", self.children)
 
 class BinOp(Expression):
     op = None
 
     def __init__(self, a, b):
         self.expr = [a, b]
+        self.children = self.expr
 
     def __str__(self):
         return f"{self.paren(self.expr[0])}{self.op}{self.paren(self.expr[1])}"
 
+    def graph(self):
+        return (self.op.strip(), self.children)
 
 class Sequence(BinOp):
     precedence = 0
@@ -88,19 +108,60 @@ class Concat(Expression):
     def __init__(self, expr, minimum: int = 0):
         self.expr = expr
         self.minimum = minimum
+        self.children = [self.expr]
 
     def __str__(self):
         suffix = '*' if self.minimum == 0 else '+'
         #print("STR", self.expr)
         return f"{self.paren(self.expr)}{suffix}"
 
+    def graph(self):
+        return ('*' if self.minimum == 0 else '+', self.children)
+
 class Rule(object):
     def __init__(self, lhs, rhs):
         self.lhs = lhs
         self.rhs = rhs
+        self.children = [self.lhs, self.rhs]
 
     def __str__(self):
         return f"{self.lhs} ::= {self.rhs}"
+
+    def graph(self):
+        return ('::=', self.children)
+
+
+def visualize_ast(root, edgelist):
+    key = id(root)
+
+    if key in edgelist:
+        return
+
+    print(root)
+    label, children = root.graph()
+    edgelist[key] = [label] + [id(c) for c in children]
+
+    for c in children:
+        visualize_ast(c, edgelist)
+
+def generate_dot(graph):
+    yield "digraph {"
+    yield "node[shape=none];"
+    for n in graph:
+        lbl = graph[n][0]
+        if not lbl or lbl[0] != '"':
+            lbl = '"' + lbl + '"'
+
+        yield f"{n} [label={lbl}]"
+        for e in graph[n][1:]:
+            yield f"{n} -> {e}"
+
+    yield "}"
+
+def generate_graph(root, output_routine):
+    edgelist = {}
+    visualize_ast(root, edgelist)
+    return output_routine(edgelist)
 
 #TODO: comments, [ wfc: ] [ vc: ] occur at the end
 
@@ -223,7 +284,7 @@ class EBNFParser(object):
                 lhs = match
                 token_stream.expect('RULEDEF')
                 rhs = self.parse_expr(token_stream)
-                out.append(Rule(lhs, rhs))
+                out.append(Rule(Symbol(lhs), rhs))
             elif tkn is None:
                 break
             elif tkn == 'EOL':
@@ -343,4 +404,12 @@ content	   ::=   	CharData? ((element | Reference | CDSect | PI | Comment) CharD
     for xx in x:
         print(xx)
 
+def test_graph_gen():
+    p = EBNFParser()
 
+    x = p.parse("content	   ::=   	CharData? ((element | Reference | CDSect | PI | Comment) CharData?)*")
+
+    g = generate_graph(x[0], generate_dot)
+    with open("/tmp/g.dot", "w") as f:
+        for l in g:
+            print(l, file=f)
