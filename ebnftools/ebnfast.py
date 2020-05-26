@@ -131,7 +131,7 @@ class Rule(object):
         return ('::=', self.children)
 
 
-def visualize_ast(root, edgelist):
+def visualize_ast(root, edgelist, rule_dict = None):
     key = id(root)
 
     if key in edgelist:
@@ -139,10 +139,14 @@ def visualize_ast(root, edgelist):
 
     print(root)
     label, children = root.graph()
+
+    if isinstance(root, Symbol) and rule_dict and label in rule_dict:
+        children = [rule_dict[label]]
+
     edgelist[key] = [label] + [id(c) for c in children]
 
     for c in children:
-        visualize_ast(c, edgelist)
+        visualize_ast(c, edgelist, rule_dict)
 
 def generate_dot(graph):
     yield "digraph {"
@@ -158,9 +162,9 @@ def generate_dot(graph):
 
     yield "}"
 
-def generate_graph(root, output_routine):
+def generate_graph(root, output_routine, rule_dict):
     edgelist = {}
-    visualize_ast(root, edgelist)
+    visualize_ast(root, edgelist, rule_dict)
     return output_routine(edgelist)
 
 #TODO: comments, [ wfc: ] [ vc: ] occur at the end
@@ -178,7 +182,7 @@ class EBNFTokenizer(object):
     def tokenize(self):
         # based on the example in the re docs
         tokens = [('COMMENT', r'/\*.*\*/'),
-                  ('SYMBOL', r'[A-Za-z][A-Za-z]*'),
+                  ('SYMBOL', r'[A-Za-z][A-Za-z0-9_]*'), # numbers and underscore are an extension from W3?
                   ('RULEDEF', r'::='),
                   ('HEX', r'#x[A-Fa-f0-9]+'),
                   ('DBLQUOTE', r'"'),
@@ -413,3 +417,4 @@ def test_graph_gen():
     with open("/tmp/g.dot", "w") as f:
         for l in g:
             print(l, file=f)
+ 
