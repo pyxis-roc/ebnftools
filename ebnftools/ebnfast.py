@@ -221,9 +221,10 @@ def generate_graph(root, output_routine, rule_dict):
 
 class ParseError(object):
     def error(self, tok, message):
-        print(f"{tok.err_scoord}: {message}")
-        print("    " + tok.err_line)
-        print(" "*(tok.err_coord[1][0]+4) +"^"*(tok.err_coord[1][1] - tok.err_coord[1][0]))
+        import sys
+        print(f"{tok.err_scoord}: {message}", file=sys.stderr)
+        print("    " + tok.err_line, file=sys.stderr)
+        print(" "*(tok.err_coord[1][0]+4) +"^"*(tok.err_coord[1][1] - tok.err_coord[1][0]), file=sys.stderr)
         raise ValueError(message)
 
 class EBNFTokenizer(object):
@@ -259,7 +260,7 @@ class EBNFTokenizer(object):
                   ('OPT', r'\?'),
                   ('ALT', r'\|'),
                   ('EOL', r'\n'),
-                  ('WHITESPACE', r'\s+'),
+                  ('WHITESPACE', r'[ \t]+'),
                   ('MISMATCH', r'.'),
         ]
 
@@ -285,8 +286,6 @@ class EBNFTokenizer(object):
                         end_quote = None
                         yield ('STRING', ''.join(string))
                         string = []
-
-                    continue
                 elif pos == 'CHARCLASS':
                     # we don't support escapes
                     if token == 'RBRACK':
@@ -297,6 +296,7 @@ class EBNFTokenizer(object):
                         string.append(match)
                 elif pos == 'NORMAL':
                     if token == 'MISMATCH':
+                        self._update_err_pos()
                         self.error(f"Unrecognized token '{match}'")
                     elif token == 'QUOTE' or token == 'DBLQUOTE':
                         pos = 'STR'
@@ -364,7 +364,7 @@ class EBNFParser(object):
         out = []
         while True:
             tkn, match = token_stream.consume()
-            if tkn == "COMMENT": # only allow comments at top level?
+            if tkn == "COMMENT":
                 continue
             elif tkn == "SYMBOL":
                 lhs = match
@@ -433,7 +433,6 @@ class EBNFParser(object):
     def parse_concat(self, token_stream):
         term = self.parse_term(token_stream)
         tkn = token_stream.lookahead()
-
         # this currently allows whitespace between term and */+/?
         if tkn == 'OPT':
             token_stream.consume()
@@ -530,3 +529,17 @@ def test_continuations():
     p = EBNFParser()
     x = p.parse(grammar, as_dict = True)
     print(x)
+
+def test_bug():
+    # this was a hard to trigger bug with whitespace including \n under certain circumstances
+    grammar = """mma_1_type ::= f16 | f32
+mma_1_layout ::= 'row' | 'col'
+mma_prefix ::= 'mma' sep 'sync' sep 'aligned'   
+mma_opcode_1 ::= mma_prefix sep 'm8n8k4' sep mma_1_layout sep mma_1_layout sep mma_1_type sep f16 sep f16 sep mma_1_type
+mma_opcode_2 ::= mma_prefix sep 'm16n8k8' sep 'row' sep 'col' sep mma_1_type sep f16 sep f16 sep mma_1_type
+mma_opcode ::= mma_opcode_1 | mma_opcode_2
+"""
+    p = EBNFParser()
+    x = p.parse(grammar, as_dict = True)
+    print(x)
+
