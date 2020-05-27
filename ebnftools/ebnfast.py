@@ -52,13 +52,63 @@ class String(Expression):
     def graph(self):
         return (str(self), [])
 
+    
+# really an enum?
 class CharClass(Expression):
     precedence = 0
     def __init__(self, char_and_ranges):
         self.c_and_r = char_and_ranges
+        self.invert = self.c_and_r[0] == '^'
+
+        if self.invert:
+            self.c_and_r = self.c_and_r[1:]
+
+        self._parse(self.c_and_r)
+
+    def _parse(self, s):
+        tokens = [('HEX', r'#x[A-Fa-f0-9]+'),
+                  ('MINUS', r'-'),
+                  ('CHAR', r'.'),]
+
+        tok_regex = '|'.join('(?P<%s>%s)' % pair for pair in tokens)
+
+        enum = []
+        for m in re.finditer(tok_regex, s):
+            token = m.lastgroup
+            match = m.group()
+
+            if token == 'HEX':
+                enum.append(int(match[2:], 16))
+            elif token == 'MINUS':
+                enum.append(match)
+            elif token == 'CHAR':
+                enum.append(ord(match))
+
+        i = 0
+        while i < len(enum):
+            if enum[i] == "-":
+                assert (i - 1 >= 0) and (i + 1 < len(enum)), f"Incorrect syntax in {self.c_and_r}"
+                enum[i-1] = (enum[i-1], enum[i+1])
+                del enum[i+1]
+                del enum[i]
+            else:
+                i += 1
+
+        self.enum = enum
+
+    def iter(self):
+        # this should be invert of Char?
+        if self.invert: raise NotImplementedError(f"Can't iterate over [^...] yet")
+
+        for x in self.enum:
+            if isinstance(x, tuple):
+                for c in range(x[0], x[1] + 1):
+                    yield chr(c)
+            else:
+                yield chr(x)
 
     def __str__(self):
-        return f"[{''.join([str(s) for s in self.c_and_r])}]"
+        return f"[{'^' if self.invert else ''}{self.c_and_r}]"
 
     def graph(self):
         return (str(self), [])
