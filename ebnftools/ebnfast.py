@@ -355,11 +355,12 @@ class EBNFTokenizer(object):
 # Term ::= Symbol | Hexadecimal | CharClass | StringLiteral | '(' Expression ')'
 
 class EBNFParser(object):
-    def parse(self, ebnf, token_stream = None):
+    def parse(self, ebnf, token_stream = None, as_dict = False):
         if token_stream is None:
             err = ParseError()
             token_stream = EBNFTokenizer(ebnf, err)
 
+        rule_names = set()
         out = []
         while True:
             tkn, match = token_stream.consume()
@@ -367,6 +368,12 @@ class EBNFParser(object):
                 continue
             elif tkn == "SYMBOL":
                 lhs = match
+
+                if lhs in rule_names:
+                    token_stream.error(f"Duplicate rule '{lhs}'")
+                else:
+                    rule_names.add(lhs)
+
                 token_stream.expect('RULEDEF')
                 rhs = self.parse_expr(token_stream)
                 out.append(Rule(Symbol(lhs), rhs))
@@ -374,16 +381,28 @@ class EBNFParser(object):
                 break
             elif tkn == 'EOL':
                 continue # maybe expect at end of rule?
+            elif tkn == 'ALT':
+                # this is an extension
+                if len(out) == 0:
+                    token_stream.error(f"Continuation found, but previous line was not a rule")
+
+                rhs = self.parse_expr(token_stream)
+                prev_rule = out[-1]
+                prev_rule.rhs = Alternation(prev_rule.rhs, rhs)
             else:
                 token_stream.error(f"Unexpected token {tkn} ({match}) when parsing rules")
 
-        return out
+        if as_dict:
+            dout = dict([(r.lhs.value, r.rhs) for r in out])
+            return dout
+        else:
+            return out
 
     def parse_expr(self, token_stream):
         out = self.parse_sequence(token_stream)
         while True:
             ltkn = token_stream.lookahead()
-            if ltkn == 'EOL' or ltkn is None: break
+            if ltkn == 'EOL' or ltkn is None or ltkn == 'COMMENT': break
             if ltkn == 'ALT':
                 token_stream.consume()
                 # treat | as left associative?
@@ -397,7 +416,7 @@ class EBNFParser(object):
 
     def parse_sequence(self, token_stream):
         out = self.parse_subtract(token_stream)
-        while token_stream.lookahead() not in ('ALT', 'EOL', 'RPAREN', None):
+        while token_stream.lookahead() not in ('ALT', 'EOL', 'RPAREN', 'COMMENT', None):
             out = Sequence(out, self.parse_subtract(token_stream))
 
         return out
@@ -504,9 +523,10 @@ def test_continuations():
     grammar = """
     test ::= 'xyz' | 'abc'
     test2 ::= 'abc'
-     | 'xyz'
+     | 'xyz' /* xyz */
+     | test  /* abc */
+
 """
     p = EBNFParser()
-    x = p.parse(grammar)
+    x = p.parse(grammar, as_dict = True)
     print(x)
-    print(x[0], x[1])
