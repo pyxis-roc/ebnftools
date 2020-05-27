@@ -52,7 +52,6 @@ class String(Expression):
     def graph(self):
         return (str(self), [])
 
-    
 # really an enum?
 class CharClass(Expression):
     precedence = 0
@@ -83,6 +82,7 @@ class CharClass(Expression):
                 enum.append(match)
             elif token == 'CHAR':
                 enum.append(ord(match))
+
 
         i = 0
         while i < len(enum):
@@ -219,15 +219,27 @@ def generate_graph(root, output_routine, rule_dict):
 
 #TODO: comments, [ wfc: ] [ vc: ] occur at the end
 
+class ParseError(object):
+    def error(self, tok, message):
+        print(f"{tok.err_scoord}: {message}")
+        print("    " + tok.err_line)
+        print(" "*(tok.err_coord[1][0]+4) +"^"*(tok.err_coord[1][1] - tok.err_coord[1][0]))
+        raise ValueError(message)
+
 class EBNFTokenizer(object):
     token = None
     match = None
     _token_stream = None
 
-    def __init__(self, strdata):
+    def __init__(self, strdata, err):
         self.data = strdata
         self._token_stream = self.tokenize()
         self.token, self.match = next(self._token_stream)
+        self.err = err
+
+    # convenience
+    def error(self, message):
+        self.err.error(self, message)
 
     def tokenize(self):
         # based on the example in the re docs
@@ -256,46 +268,62 @@ class EBNFTokenizer(object):
         pos = 'NORMAL' # or STR or CHARCLASS
         end_quote = None
         string = []
-        for m in re.finditer(tok_regex, self.data, flags=re.M):
-            token = m.lastgroup
-            match = m.group()
+        for lno, l in enumerate(self.data.split('\n')):
+            self.line = l
 
-            if pos == 'STR':
-                if token != end_quote:
-                    string.append(match)
-                else:
-                    pos = 'NORMAL'
-                    end_quote = None
-                    yield ('STRING', ''.join(string))
-                    string = []
+            for m in re.finditer(tok_regex, l + '\n', flags=re.M):
+                token = m.lastgroup
+                match = m.group()
+                self.coord = (lno+1, m.span())
+                self.scoord = f'{self.coord[0]}:{self.coord[1][0]}-{self.coord[1][1]}'
 
-                continue
-            elif pos == 'CHARCLASS':
-                # we don't support escapes
-                if token == 'RBRACK':
-                    pos = 'NORMAL'
-                    yield ('CHARCLASS', ''.join(string)) # let CharClass parse this?
-                    string = []
-                else:
-                    string.append(match)
-            elif pos == 'NORMAL':
-                if token == 'MISMATCH':
-                    raise ValueError(f"Mismatch {match}")
-                elif token == 'QUOTE' or token == 'DBLQUOTE':
-                    pos = 'STR'
-                    end_quote = token
-                elif token == 'WHITESPACE':
-                    # Sequence?
-                    pass
-                elif token == 'LBRACK':
-                    pos = 'CHARCLASS'
-                else:
-                    yield (token, match)
+                if pos == 'STR':
+                    if token != end_quote:
+                        string.append(match)
+                    else:
+                        pos = 'NORMAL'
+                        end_quote = None
+                        yield ('STRING', ''.join(string))
+                        string = []
+
+                    continue
+                elif pos == 'CHARCLASS':
+                    # we don't support escapes
+                    if token == 'RBRACK':
+                        pos = 'NORMAL'
+                        yield ('CHARCLASS', ''.join(string)) # CharClass parses this
+                        string = []
+                    else:
+                        string.append(match)
+                elif pos == 'NORMAL':
+                    if token == 'MISMATCH':
+                        self.error(f"Unrecognized token '{match}'")
+                    elif token == 'QUOTE' or token == 'DBLQUOTE':
+                        pos = 'STR'
+                        end_quote = token
+                    elif token == 'WHITESPACE':
+                        # Sequence?
+                        pass
+                    elif token == 'LBRACK':
+                        pos = 'CHARCLASS'
+                    else:
+                        yield (token, match)
+
+            if pos != 'NORMAL':
+                self._update_err_pos()
+                self.error(f"Encountered end-of-line when scanning {pos}")
+
+
+    def _update_err_pos(self):
+        self.err_coord = self.coord
+        self.err_line = self.line
+        self.err_scoord = self.scoord
 
     def lookahead(self):
         return self.token
 
     def consume(self):
+        self._update_err_pos()
         tkn, match = self.token, self.match
 
         try:
@@ -307,8 +335,10 @@ class EBNFTokenizer(object):
 
     def expect(self, token):
         tkn, match = self.consume()
-        if tkn == token: return match
-        assert tkn == token, f"Expecting {token}, found {tkn}"
+        if tkn == token:
+            return match
+        else:
+            self.error(f"Expecting {token}, found {tkn}")
 
 # BNF ::= (Comment | Rule)+
 
@@ -327,7 +357,8 @@ class EBNFTokenizer(object):
 class EBNFParser(object):
     def parse(self, ebnf, token_stream = None):
         if token_stream is None:
-            token_stream = EBNFTokenizer(ebnf)
+            err = ParseError()
+            token_stream = EBNFTokenizer(ebnf, err)
 
         out = []
         while True:
@@ -344,7 +375,7 @@ class EBNFParser(object):
             elif tkn == 'EOL':
                 continue # maybe expect at end of rule?
             else:
-                assert False, f"Unexpected token {tkn}"
+                token_stream.error(f"Unexpected token {tkn} ({match}) when parsing rules")
 
         return out
 
@@ -360,7 +391,7 @@ class EBNFParser(object):
             elif ltkn == 'RPAREN':
                 break
             else:
-                assert False, f"Unexpected token {ltkn}"
+                token_stream.error(f"Unexpected token {ltkn} when parsing expression")
 
         return out
 
@@ -399,6 +430,7 @@ class EBNFParser(object):
 
     def parse_term(self, token_stream):
         tkn, match = token_stream.consume()
+
         if tkn == 'HEX':
             return Char(int(match[2:], 16))
         elif tkn == 'STRING':
@@ -413,8 +445,7 @@ class EBNFParser(object):
             expr._explicit_paren = True
             return expr
         else:
-            print(f"Unmatched {tkn}/{match} when parsing term")
-
+            token_stream.error(f"Unexpected token {tkn} when parsing term")
 
 def test_parser_1():
     p = EBNFParser()
@@ -467,4 +498,15 @@ def test_graph_gen():
     with open("/tmp/g.dot", "w") as f:
         for l in g:
             print(l, file=f)
- 
+
+def test_continuations():
+
+    grammar = """
+    test ::= 'xyz' | 'abc'
+    test2 ::= 'abc'
+     | 'xyz'
+"""
+    p = EBNFParser()
+    x = p.parse(grammar)
+    print(x)
+    print(x[0], x[1])
