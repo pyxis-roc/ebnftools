@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from ebnfast import *
+from .ebnfast import *
 import itertools
 
 def generate2(grammar, obj):
@@ -12,6 +12,12 @@ def generate2(grammar, obj):
         alt1 = generate2(grammar, obj.expr[0])
         alt2 = generate2(grammar, obj.expr[1])
         return itertools.chain(alt1, alt2)
+    elif isinstance(obj, Subtraction):
+        e1 = generate2(grammar, obj.expr[0])
+        e2 = set(generate2(grammar, obj.expr[1]))
+        return filter(lambda x: x not in e2, e1)
+    elif isinstance(obj, CharClass) and not obj.invert:
+        return obj.iter()
     elif isinstance(obj, Optional):
         return itertools.chain(generate2(grammar, obj.expr), [[]])
     elif isinstance(obj, Sequence):
