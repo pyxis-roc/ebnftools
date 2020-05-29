@@ -16,18 +16,113 @@
 #   nonterminal1 = nonterminal2 # constraint values of both nonterminals to be equal
 #   not constraint              # negate constraint
 
-from .ebnfast import *
-from .ebnfgen import *
+try:
+    from .ebnfast import *
+    from .ebnfgen import *
+except ImportError:
+    from ebnfast import *
+    from ebnfgen import *
+
 import itertools
+
+# expr ::= implication
+#
+# implication ::= xjunction '=>' expr
+
+# xjunction ::=  term | term 'and' xjunction | term 'or' xjunction | '(' expr ')' | 'not' xjunction
+#
+# term ::= symbol '=' symbol | symbol '=' string
+
+# based on smt2ast parser
+class SExprList(object):
+    def __init__(self, *args):
+        self.value = args
+
+    def __str__(self):
+        return f"({' '.join([str(s) for s in self.value])})"
+
+class ConstraintParser(object):
+    def tokenize(self, data):
+        # based on the example in the re docs
+        tokens = [('STRING1', r'"[^"]*"'),
+                  ('STRING2', r"'[^']*'"),
+                  ('LPAREN', r'\('),
+                  ('RPAREN', r'\)'),
+                  ('SYMBOL', r'[A-Za-z_][A-Za-z0-9_]*'),
+                  ('WHITESPACE', r'\s+'),
+                  ('MISMATCH', r'.'),]
+
+        tok_regex = '|'.join('(?P<%s>%s)' % pair for pair in tokens)
+
+        for m in re.finditer(tok_regex, data, flags=re.M):
+            token = m.lastgroup
+            match = m.group()
+
+            if token == 'MISMATCH':
+                raise ValueError(f"Mismatch {match} (when parsing {data})")
+            elif token == 'WHITESPACE':
+                pass
+            else:
+                yield (token, match)
+
+    def parse(self, llstr, token_stream = None):
+        if token_stream is None:
+            token_stream = self.tokenize(llstr)
+
+        out = []
+        try:
+            while True:
+                tkn, match = next(token_stream)
+                if tkn == "RPAREN":
+                    x = SExprList(*out)
+                    if len(x.value):
+                        sym = x.value[0].value
+                        if sym  == "eq":
+                            assert len(x.value) == 3, f"eq needs two arguments: {x}"
+                            return Equals(x.value[1], x.value[2])
+                        elif sym == "not":
+                            assert len(x.value) == 2, f"not needs one argument: {x}"
+                            return Not(x.value[1])
+                        elif sym == "imp":
+                            assert len(x.value) == 3, f"eq needs two arguments: {x}"
+                            return Imp(x.value[1], x.value[2])
+                        elif sym == "and":
+                            assert len(x.value) >= 3, f"and needs at least two arguments: {x}"
+                            return And(x.value[1:])
+                        elif sym == "or":
+                            assert len(x.value) >= 3, f"or needs at least two arguments: {x}"
+                            return Or(x.value[1:])
+                        else:
+                            raise NotImplementedError(f"Unknown symbol {x.value[0]}, in {x}")
+                    else:
+                        raise ValueError(f"Empty list not supported")
+                elif tkn == "LPAREN":
+                    out.append(self.parse(llstr, token_stream))
+                elif tkn == "SYMBOL":
+                    out.append(Symbol(match))
+                elif tkn == "STRING1" or tkn == "STRING2":
+                    out.append(String(match[1:-1]))
+                else:
+                    raise NotImplementedError(f"Unknown token {tkn} '{match}'")
+        except StopIteration:
+            #raise ValueError("Ran out of input when parsing SExpr")
+            pass
+
+        if len(out) == 1:
+            return out[0]
+        else:
+            raise ValueError(f"Parse resulted in multiple items! {out}")
 
 def parse_constraint(line):
     _, r, cons = line.split(':', 3)
 
+    cp = ConstraintParser()
+    cons = cp.parse(cons)
     #TODO: full-fledged parser. For now, support only =
-    cons = cons.split("=")
-    cons = Equals(Symbol(cons[0].strip()), Symbol(cons[1].strip()))
+    #cons = cons.split("=")
+    #cons = Equals(Symbol(cons[0].strip()), Symbol(cons[1].strip()))
 
-    return (r.strip(), cons)
+    return ([rr.strip() for rr in r.split(",")], cons)
 
 def parse_constrained_grammar(src, parse_grammar = True, apply_constraints = False):
     """A constrained grammar is a standard grammar that EBNFParse can
@@ -48,9 +143,11 @@ def parse_constrained_grammar(src, parse_grammar = True, apply_constraints = Fal
     for l in src:
         if l.startswith("CONSTRAINT:"):
             r, c = parse_constraint(l)
-            if r not in constraints:
-                constraints[r] = []
-            constraints[r].append(c)
+            for rr in r:
+                if rr not in constraints:
+                    constraints[rr] = []
+
+                constraints[rr].append(c)
         else:
             gr.append(l)
 
@@ -99,6 +196,7 @@ class EnumerationSolver(object):
         variables = set()
         cv = []
         for i, c in enumerate(self.c.constraints):
+            print(c)
             v = set([x.value for x in get_symbols(c)])
             cv.append(v)
             variables = variables.union(v)
@@ -145,6 +243,46 @@ class Not(object):
     def __str__(self):
         return f"!({self.x})"
 
+class Imp(object):
+    def __init__(self, antecedent, consequent):
+        self.ant = antecedent
+        self.con = consequent
+
+    def children(self):
+        return [self.ant, self.con]
+
+    def check(self, varindex, assignment):
+        return (not self.ant.check(varindex, assignment)) or self.con.check(varindex, assignment)
+
+    def __str__(self):
+        return f"({self.ant} => {self.con})"
+
+class And(object):
+    def __init__(self, terms):
+        self.terms = terms
+
+    def children(self):
+        return self.terms
+
+    def check(self, varindex, assignment):
+        return all((t.check(varindex, assignment) for t in self.terms))
+
+    def __str__(self):
+        return " and ".join([f"({t})" for t in self.terms])
+
+class Or(object):
+    def __init__(self, terms):
+        self.terms = terms
+
+    def children(self):
+        return self.terms
+
+    def check(self, varindex, assignment):
+        return any((t.check(varindex, assignment) for t in self.terms))
+
+    def __str__(self):
+        return " or ".join([f"({t})" for t in self.terms])
+
 class Equals(object):
     def __init__(self, lhs, rhs):
         self.lhs = lhs
@@ -154,23 +292,14 @@ class Equals(object):
         return [self.lhs, self.rhs]
 
     def check(self, varindex, assignment):
-        #TODO: generate the check
-
-        return assignment[varindex[0]] == assignment[varindex[1]]
+        # TODO: generate the check to eliminate this if
+        if isinstance(self.rhs, str):
+            return assignment[varindex[0]] == self.rhs.value
+        else:
+            return assignment[varindex[0]] == assignment[varindex[1]]
 
     def __str__(self):
         return f"{self.lhs} = {self.rhs}"
-
-class Implies(object):
-    def __init__(self, lhs, rhs):
-        self.lhs = lhs
-        self.rhs = rhs
-
-    def children(self):
-        return [self.lhs, self.rhs]
-
-    def __str__(self):
-        return f"{self.lhs} => {self.rhs}"
 
 def get_symbols(root, out = None):
     if out is None:
@@ -178,6 +307,8 @@ def get_symbols(root, out = None):
 
     if isinstance(root, Symbol):
         out.append(root)
+    elif isinstance(root, String):
+        pass
     else:
         for x in root.children():
             get_symbols(x, out)
