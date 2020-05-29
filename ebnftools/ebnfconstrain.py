@@ -114,7 +114,7 @@ class ConstraintParser(object):
             raise ValueError(f"Parse resulted in multiple items! {out}")
 
 def parse_constraint(line):
-    _, r, cons = line.split(':', 3)
+    cmd, r, cons = line.split(':', 3)
 
     cp = ConstraintParser()
     cons = cp.parse(cons)
@@ -122,7 +122,7 @@ def parse_constraint(line):
     #cons = cons.split("=")
     #cons = Equals(Symbol(cons[0].strip()), Symbol(cons[1].strip()))
 
-    return ([rr.strip() for rr in r.split(",")], cons)
+    return ([rr.strip() for rr in r.split(",")], cons, cmd == "CONSTRAINT_DEBUG")
 
 def parse_constrained_grammar(src, parse_grammar = True, apply_constraints = False):
     """A constrained grammar is a standard grammar that EBNFParse can
@@ -139,21 +139,23 @@ def parse_constrained_grammar(src, parse_grammar = True, apply_constraints = Fal
     """
 
     constraints = {}
+    debug_constraints = set()
     gr = []
     for l in src:
-        if l.startswith("CONSTRAINT:"):
-            r, c = parse_constraint(l)
+        if l.startswith("CONSTRAINT:") or l.startswith("CONSTRAINT_DEBUG:"):
+            r, c, dbg = parse_constraint(l)
             for rr in r:
                 if rr not in constraints:
                     constraints[rr] = []
 
+                if dbg: debug_constraints.add(rr)
                 constraints[rr].append(c)
         else:
             gr.append(l)
 
     ca = []
     for r in constraints:
-        ca.append(Constraint(r, constraints[r]))
+        ca.append(Constraint(r, constraints[r], debug = r in debug_constraints))
 
     cgr = None
     constraints = ca
@@ -178,9 +180,10 @@ def apply_grammar_constraints(constraints, grammar):
     return out
 
 class Constraint(object):
-    def __init__(self, rule, constraints):
+    def __init__(self, rule, constraints, debug = False):
         self.rule = rule
         self.constraints = constraints
+        self.debug = debug
 
     def __str__(self):
         return f"{self.rule}: {';'.join([str(s) for s in self.constraints])}"
@@ -196,7 +199,6 @@ class EnumerationSolver(object):
         variables = set()
         cv = []
         for i, c in enumerate(self.c.constraints):
-            print(c)
             v = set([x.value for x in get_symbols(c)])
             cv.append(v)
             variables = variables.union(v)
@@ -214,19 +216,25 @@ class EnumerationSolver(object):
         vo = list(self.variables)
         dom = list(self.domains[v] for v in vo)
 
-        vi = []
-        for ccv in self.cv:
-            vi.append([vo.index(v) for v in ccv])
+        if self.c.debug:
+            print("variables", vo)
+            print("domains", self.domains)
 
-        #print(vi)
+        #vi = []
+        #for ccv in self.cv:
+        #    vi.append([vo.index(v) for v in ccv])
+
         #TODO: do some sort of domain reduction
 
         for assignment in itertools.product(*dom):
+            if self.c.debug: print("assignment", assignment)
+            asgn = dict(zip(vo, assignment))
             for ci, c in enumerate(self.c.constraints):
-                if not c.check(vi[ci], assignment):
+                if not c.check(asgn):
+                    if self.c.debug: print("unsat", asgn, c)
                     break
             else:
-                asgn = dict(zip(vo, assignment))
+                if self.c.debug: print("sat", asgn)
                 yield asgn
                 #print(rewrite_syms(self.c.grammar[self.c.rule], asgn))
 
@@ -237,8 +245,8 @@ class Not(object):
     def children(self):
         return [self.x]
 
-    def check(self, varindex, assignment):
-        return not self.x.check(varindex, assignment)
+    def check(self, assignment):
+        return not self.x.check(assignment)
 
     def __str__(self):
         return f"!({self.x})"
@@ -251,8 +259,8 @@ class Imp(object):
     def children(self):
         return [self.ant, self.con]
 
-    def check(self, varindex, assignment):
-        return (not self.ant.check(varindex, assignment)) or self.con.check(varindex, assignment)
+    def check(self, assignment):
+        return (not self.ant.check(assignment)) or self.con.check(assignment)
 
     def __str__(self):
         return f"({self.ant} => {self.con})"
@@ -264,8 +272,8 @@ class And(object):
     def children(self):
         return self.terms
 
-    def check(self, varindex, assignment):
-        return all((t.check(varindex, assignment) for t in self.terms))
+    def check(self, assignment):
+        return all((t.check(assignment) for t in self.terms))
 
     def __str__(self):
         return " and ".join([f"({t})" for t in self.terms])
@@ -277,12 +285,13 @@ class Or(object):
     def children(self):
         return self.terms
 
-    def check(self, varindex, assignment):
-        return any((t.check(varindex, assignment) for t in self.terms))
+    def check(self, assignment):
+        return any((t.check(assignment) for t in self.terms))
 
     def __str__(self):
         return " or ".join([f"({t})" for t in self.terms])
 
+# only really works for primitive object comparisons
 class Equals(object):
     def __init__(self, lhs, rhs):
         self.lhs = lhs
@@ -291,12 +300,12 @@ class Equals(object):
     def children(self):
         return [self.lhs, self.rhs]
 
-    def check(self, varindex, assignment):
+    def check(self, assignment):
         # TODO: generate the check to eliminate this if
-        if isinstance(self.rhs, str):
-            return assignment[varindex[0]] == self.rhs.value
+        if isinstance(self.rhs, String):
+            return assignment[self.lhs.value] == self.rhs.value
         else:
-            return assignment[varindex[0]] == assignment[varindex[1]]
+            return assignment[self.lhs.value] == assignment[self.rhs.value]
 
     def __str__(self):
         return f"{self.lhs} = {self.rhs}"
@@ -316,9 +325,23 @@ def get_symbols(root, out = None):
     return out
 
 def rewrite_syms(root, varassign):
+    def make_sequence(x):
+        if len(x) == 2:
+            return Sequence(String(x[0]), String(x[1]))
+        elif len(x) == 1:
+            return String(x[0])
+        elif len(x) == 0:
+            return String('')
+
+        return Sequence(make_sequence(x[1:]), String(x[0]))
+
     if isinstance(root, Symbol):
         if root.value in varassign:
-            return String(varassign[root.value])
+            rep = varassign[root.value]
+            if isinstance(rep, str):
+                return String(rep)
+            else:
+                return make_sequence(rep)
     elif isinstance(root, (Char, String, CharClass)):
         return root
     elif isinstance(root, Optional):
@@ -344,7 +367,7 @@ def apply_constraints(grammar, rule_constraints):
                 out = Alternation(out, rs)
 
         if out is None:
-            print("WARNING: Constraints were not satisfied for {c.rule}, replacing with empty string")
+            print(f"WARNING: Constraints were not satisfied for {c.rule}, replacing with empty string")
             out = String('')
 
         grammar[c.rule] = out
@@ -380,6 +403,24 @@ btype  ::= 's4' | 'u4'
 wmma_mma_opcode ::= 'wmma' sep 'mma' sep 'sync' sep 'aligned' sep 'row' sep 'col' sep shape sep s32 sep atype sep btype sep s32 (sep 'satfinite')?
 
 CONSTRAINT: wmma_mma_opcode: atype = btype
+"""
+
+    gr = gr.split('\n')
+
+    constraints, gr, cgr = parse_constrained_grammar(gr, True, True)
+
+    print(constraints)
+    print('\n'.join([str(s) for s in gr]))
+    print('\n'.join([str(s) for s in cgr]))
+
+def test_opt():
+    gr = """
+sep ::= '.'
+ftz_clause ::= (sep 'ftz')?
+type1 ::= 'f16' | 'f32' | 'f64'
+x_opcode ::= 'somecode' ftz_clause type1
+
+CONSTRAINT: x_opcode: (imp (not (eq type1 'f32')) (eq ftz_clause ''))
 """
 
     gr = gr.split('\n')
