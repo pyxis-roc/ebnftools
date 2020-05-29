@@ -23,7 +23,7 @@ def generate2(grammar, obj):
     elif isinstance(obj, CharClass) and not obj.invert:
         return obj.iter()
     elif isinstance(obj, Optional):
-        return itertools.chain(generate2(grammar, obj.expr), [[]])
+        return itertools.chain(generate2(grammar, obj.expr), [''])
     elif isinstance(obj, Sequence):
         seq1 = generate2(grammar, obj.expr[0])
         seq2 = generate2(grammar, obj.expr[1])
