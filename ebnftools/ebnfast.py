@@ -134,7 +134,16 @@ class BinOp(Expression):
         self.children = self.expr
 
     def __str__(self):
-        return f"{self.paren(self.expr[0])}{self.op}{self.paren(self.expr[1])}"
+        x1 = self.paren(self.expr[0])
+        x2 = self.paren(self.expr[1])
+        o = self.op
+        #return f"{x1}{self.op}{x2}"
+
+        if self.op == ' | ':
+            if len(x1) > 50:
+                o = '\n        | '
+
+        return f"{x1}{o}{x2}"
 
     def graph(self):
         return (self.op.strip(), self.children)
