@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 
-from .ebnfast import *
+try:
+    from .ebnfast import *
+except ImportError:
+    from ebnfast import *
+
 import itertools
 
 def generate2(grammar, obj):
@@ -24,6 +28,30 @@ def generate2(grammar, obj):
         seq1 = generate2(grammar, obj.expr[0])
         seq2 = generate2(grammar, obj.expr[1])
         return itertools.product(seq1, seq2)
+    else:
+        raise NotImplementedError(f"Don't support {obj} ({type(obj)})")
+
+def count(grammar, obj):
+    if isinstance(obj, Symbol):
+        return count(grammar, grammar[obj.value])
+    elif isinstance(obj, String):
+        return 1
+    elif isinstance(obj, Alternation):
+        alt1 = count(grammar, obj.expr[0])
+        alt2 = count(grammar, obj.expr[1])
+        return alt1 + alt2
+    elif isinstance(obj, Subtraction):
+        e1 = generate2(grammar, obj.expr[0])
+        e2 = set(generate2(grammar, obj.expr[1]))
+        return len(list(filter(lambda x: x not in e2, e1)))
+    elif isinstance(obj, CharClass) and not obj.invert:
+        return len(list(obj.iter()))
+    elif isinstance(obj, Optional):
+        return count(grammar, obj.expr) + 1
+    elif isinstance(obj, Sequence):
+        seq1 = count(grammar, obj.expr[0])
+        seq2 = count(grammar, obj.expr[1])
+        return seq1 * seq2
     else:
         raise NotImplementedError(f"Don't support {obj}")
 
