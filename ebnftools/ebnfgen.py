@@ -31,6 +31,20 @@ def generate2(grammar, obj):
     else:
         raise NotImplementedError(f"Don't support {obj} ({type(obj)})")
 
+def isfinite(grammar, obj):
+    if isinstance(obj, (String, CharClass)):
+        return True
+    elif isinstance(obj, Symbol):
+        return isfinite(grammar, grammar[obj.value])
+    elif isinstance(obj, BinOp):
+        return isfinite(grammar, obj.expr[0]) and isfinite(grammar, obj.expr[1])
+    elif isinstance(obj, Optional):
+        return isfinite(grammar, obj.expr)
+    elif isinstance(obj, Concat):
+        return False
+    else:
+        raise NotImplementedError(f"Missing {obj} in isfinite")
+
 def count(grammar, obj):
     if isinstance(obj, Symbol):
         return count(grammar, grammar[obj.value])
@@ -54,6 +68,25 @@ def count(grammar, obj):
         return seq1 * seq2
     else:
         raise NotImplementedError(f"Don't support {obj}")
+
+# visit the generated tuples
+def visitor_make_sequence(s):
+        if isinstance(s, str):
+            return String(s)
+        elif isinstance(s, (String, Sequence)):
+            return s
+        elif isinstance(s, tuple):
+            return Sequence(visitor_make_sequence(s[0]), visitor_make_sequence(s[1]))
+        else:
+            raise NotImplementedError(f"make_sequence: unknown {s}/{type(s)}")
+
+def visit_gen(s, visitor, visitor_args = []):
+    if isinstance(s, str):
+        return visitor(s, *visitor_args)
+    elif isinstance(s, tuple):
+        return visitor(s, *visitor_args)
+    else:
+        raise ValueError(f"Support only tuples and strings {s}")
 
 def flatten(s, out = None):
     if out is None:
@@ -105,3 +138,10 @@ def test_gen():
     for l in gen:
         print(''.join(flatten(l)))
 
+def test_visit_gen():
+    p = EBNFParser()
+    r = p.parse("set_stype ::= ((('b' | 'u' | 's') ('16' | '32' | '64')) | 'f32' | 'f64')", as_dict=True)
+
+    gen = generate2(r, r['set_stype'])
+    for l in gen:
+        print(visit_gen(l, visitor_make_sequence))

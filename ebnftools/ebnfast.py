@@ -140,8 +140,10 @@ class BinOp(Expression):
         #return f"{x1}{self.op}{x2}"
 
         if self.op == ' | ':
-            if len(x1) > 50:
-                o = '\n        | '
+            # only do this if we were top-level
+            #if len(x1) > 50:
+            #    o = '\n        | '
+            pass
 
         return f"{x1}{o}{x2}"
 
@@ -227,6 +229,95 @@ def generate_graph(root, output_routine, rule_dict):
     return output_routine(edgelist)
 
 #TODO: comments, [ wfc: ] [ vc: ] occur at the end
+
+# this is a bit more verbose than ASTNodeTransformer, but that's okay
+class EBNFTransformer(object):
+    def visit_Rule(self, node):
+        node.lhs = self.visit(node.lhs)
+        node.rhs = self.visit(node.rhs)
+
+        return node
+
+    def visit_Concat(self, node):
+        node.expr = self.visit(node.expr)
+
+        return node
+
+    # todo: possibly useful if one of expr is zero to return the other
+    # (except for subtract)
+
+    def visit_BinOp(self, node):
+        node.expr = [self.visit(x) for x in node.expr]
+        return node
+
+    def visit_Optional(self, node):
+        self.expr = self.visit(node.expr)
+        return node
+
+    def visit_CharClass(self, node):
+        return node
+
+    def visit_String(self, node):
+        return node
+
+    def visit_Char(self, node):
+        return node
+
+    def visit_Symbol(self, node):
+        return node
+
+    def visit_Subtraction(self, node):
+        return self.visit_BinOp(node)
+
+    def visit_Alternation(self, node):
+        return self.visit_BinOp(node)
+
+    def visit_Sequence(self, node):
+        return self.visit_BinOp(node)
+
+    def visit(self, node):
+        if isinstance(node, Rule):
+            return self.visit_Rule(node)
+        elif isinstance(node, Concat):
+            return self.visit_Concat(node)
+        elif isinstance(node, BinOp):
+            if isinstance(node, Subtraction):
+                return self.visit_Subtraction(node)
+            elif isinstance(node, Alternation):
+                return self.visit_Alternation(node)
+            elif isinstance(node, Sequence):
+                return self.visit_Sequence(node)
+            else:
+                raise NotImplementedError(f"Unknown BinOp node {node}")
+        elif isinstance(node, CharClass):
+            return self.visit_CharClass(node)
+        elif isinstance(node, Symbol):
+            return self.visit_Symbol(node)
+        elif isinstance(node, Char):
+            return self.visit_Char(node)
+        elif isinstance(node, String):
+            return self.visit_String(node)
+        elif isinstance(node, Optional):
+            return self.visit_Optional(node)
+        elif isinstance(node, Concat):
+            return self.visit_Concat(node)
+        else:
+            raise NotImplementedError(f"Unimplemented visit for node {type(node)}")
+
+    # this is not in the AST
+    def visit_RuleList(self, rule_list):
+        new_list = []
+        for r in rule_list:
+            nr = self.visit(r)
+            if nr is None: # delete rule
+                continue
+
+            if isinstance(nr, list): # replace with multiple rules
+                new_list.extend(nr)
+            else: # replace with another (or the same) rule
+                new_list.append(nr)
+
+        return new_list
 
 class ParseError(object):
     def error(self, tok, message):
@@ -551,4 +642,21 @@ mma_opcode ::= mma_opcode_1 | mma_opcode_2
     p = EBNFParser()
     x = p.parse(grammar, as_dict = True)
     print(x)
+
+def test_xformer():
+    p = EBNFParser()
+
+    rules = p.parse('''
+Char	   ::=   	#x9 | #xA | #xD | [#x20-#xD7FF] | [#xE000-#xFFFD] | [#x10000-#x10FFFF]
+
+S	   ::=   	(#x20 | #x9 | #xD | #xA)+
+
+Comment	   ::=   	'<!--' ((Char - '-') | ('-' (Char - '-')))* '-->'
+
+content	   ::=   	CharData? ((element | Reference | CDSect | PI | Comment) CharData?)*
+''')
+
+    xf = EBNFTransformer()
+    rl = xf.visit_RuleList(rules)
+    print(rules, rl)
 
