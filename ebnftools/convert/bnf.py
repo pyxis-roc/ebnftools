@@ -25,6 +25,30 @@ except ValueError:
     from ebnftools.ebnfast import *
     from ebnftools.ebnfgen import isfinite as ebnf_isfinite, generate2, visit_gen, visitor_make_sequence
 
+class LiteralRewriter(EBNFTransformer):
+    def visit_String(self, node):
+        sk = repr(node.value)
+        if sk in self._literals_to_tokens:
+            return Symbol(self._literals_to_tokens[sk])
+
+        return node
+
+    def rewrite(self, rules, lit2tokens):
+        self._literals_to_tokens = lit2tokens
+        return self.visit_RuleList(rules)
+
+class CharClassRewriter(EBNFTransformer):
+    def visit_CharClass(self, node):
+        sk = str(node)
+        if sk in self._literals_to_tokens:
+            return Symbol(self._literals_to_tokens[sk])
+
+        return node
+
+    def rewrite(self, rules, lit2tokens):
+        self._literals_to_tokens = lit2tokens
+        return self.visit_RuleList(rules)
+
 class EBNF2BNF(EBNFTransformer):
     dedup_across_rules = False
 
@@ -32,6 +56,8 @@ class EBNF2BNF(EBNFTransformer):
         x = 1
         if not self.dedup_across_rules:
             tryname = name + "_" + self.rulename
+        else:
+            tryname = name
 
         while tryname in self.names:
             tryname = name + f"_{x}"
@@ -47,7 +73,6 @@ class EBNF2BNF(EBNFTransformer):
             self._dedup_rules[k] = rule.lhs
 
         return self._dedup_rules[k]
-
 
     def visit_Rule(self, node):
         self.new_rules = []
@@ -140,6 +165,24 @@ class EBNF2BNF(EBNFTransformer):
         assert len(self.stack) == 0, self.stack
         return r
 
+def get_nodes(collection, rules, node_types, extractfn = None):
+    def _visit(n):
+        if isinstance(n, node_types):
+            if extractfn is None:
+                collection.add(n)
+            else:
+                extractfn(collection, n)
+
+    visit_rules(rules, '*', _visit)
+
+    return collection
+
+def get_strings(rules):
+    return get_nodes(set(), rules, String, lambda c, x: c.add(x.value))
+
+def get_charclass(rules):
+    return get_nodes(set(), rules, CharClass, lambda c, x: c.add(str(x)))
+
 def test_EBNF2BNF1():
     p = EBNFParser()
     rules = p.parse('''
@@ -163,3 +206,37 @@ tex_opcode_3 ::= 'tex' sep ('base' | 'level' | 'grad') sep '2dms' sep 'v4' sep t
 
     for r in orules:
         print(r)
+
+def test_dedup():
+    p = EBNFParser()
+
+    g = p.parse("""\
+f_abs_opcode ::= 'abs' ((sep ftz)? sep f32 | sep f64)
+f_neg_opcode ::= 'neg' ((sep ftz)? sep f32 | sep f64)
+f_min_opcode ::= 'min' ((sep ftz)? sep f32 | sep f64)
+f_max_opcode ::= 'max' ((sep ftz)? sep f32 | sep f64)
+""")
+
+    x = EBNF2BNF()
+    x.dedup_across_rules = True
+    orules = x.visit_RuleList(g)
+
+    for r in orules:
+        print(r)
+
+def test_get_strings():
+    p = EBNFParser()
+
+    g = p.parse("""\
+sep ::= '.'
+ftz ::= 'ftz'
+f32 ::= 'f32'
+f64 ::= 'f64'
+f_abs_opcode ::= 'abs' ((sep ftz)? sep f32 | sep f64)
+f_neg_opcode ::= 'neg' ((sep ftz)? sep f32 | sep f64)
+f_min_opcode ::= 'min' ((sep ftz)? sep f32 | sep f64)
+f_max_opcode ::= 'max' ((sep ftz)? sep f32 | sep f64)
+""")
+
+    s = get_strings(g)
+    print(s)

@@ -71,15 +71,16 @@ def count(grammar, obj):
 
 # visit the generated tuples
 def visitor_make_sequence(s):
-        if isinstance(s, str):
-            return String(s)
-        elif isinstance(s, (String, Sequence)):
-            return s
-        elif isinstance(s, tuple):
-            return Sequence(visitor_make_sequence(s[0]), visitor_make_sequence(s[1]))
-        else:
-            raise NotImplementedError(f"make_sequence: unknown {s}/{type(s)}")
+    if isinstance(s, str):
+        return String(s)
+    elif isinstance(s, (String, Sequence)):
+        return s
+    elif isinstance(s, tuple):
+        return Sequence(visitor_make_sequence(s[0]), visitor_make_sequence(s[1]))
+    else:
+        raise NotImplementedError(f"make_sequence: unknown {s}/{type(s)}")
 
+# visit the output of generate2
 def visit_gen(s, visitor, visitor_args = []):
     if isinstance(s, str):
         return visitor(s, *visitor_args)

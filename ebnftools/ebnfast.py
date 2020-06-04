@@ -192,6 +192,28 @@ class Rule(object):
         return ('::=', self.children)
 
 
+def visit_rule_dict(grammar, node, vfn, vfn_args = []):
+    vfn(node, *vfn_args)
+
+    if isinstance(node, Symbol):
+        visit_rule_dict(grammar, grammar[node.value], vfn, vfn_args)
+    else:
+        for c in node.children:
+            visit_rule_dict(grammar, c, vfn, vfn_args)
+
+def visit_rules(rules, start, vfn, vfn_args = []):
+    grammar = dict([(r.lhs.value, r.rhs) for r in rules])
+    if start == '*':
+        # visit all the rules
+        for r in rules:
+            n = grammar[r.lhs.value]
+            vfn(r, *vfn_args)
+            vfn(r.lhs.value, *vfn_args)
+            visit_rule_dict(grammar, n, vfn, vfn_args)
+    else:
+        start_node = grammar[start]
+        visit_rule_dict(grammar, start_node, vfn, vfn_args)
+
 def visualize_ast(root, edgelist, rule_dict = None):
     key = id(root)
 
