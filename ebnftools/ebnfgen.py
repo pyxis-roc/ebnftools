@@ -7,39 +7,60 @@ except ImportError:
 
 import itertools
 
-def generate2(grammar, obj):
+def generate2(grammar, obj, _sym_stack = None):
+    if _sym_stack is None:
+        _sym_stack = set()
+
     if isinstance(obj, Symbol):
-        return generate2(grammar, grammar[obj.value])
+        if obj.value in _sym_stack: raise RecursionError(f"Generation of infinite productions by recursive use of symbol {obj.value} is not supported")
+        _sym_stack.add(obj.value)
+        x = generate2(grammar, grammar[obj.value], _sym_stack)
+        _sym_stack.remove(obj.value)
+        return x
     elif isinstance(obj, String):
         return [obj.value]
     elif isinstance(obj, Alternation):
-        alt1 = generate2(grammar, obj.expr[0])
-        alt2 = generate2(grammar, obj.expr[1])
+        alt1 = generate2(grammar, obj.expr[0], _sym_stack)
+        alt2 = generate2(grammar, obj.expr[1], _sym_stack)
         return itertools.chain(alt1, alt2)
     elif isinstance(obj, Subtraction):
-        e1 = generate2(grammar, obj.expr[0])
-        e2 = set(generate2(grammar, obj.expr[1]))
+        e1 = generate2(grammar, obj.expr[0], _sym_stack)
+        e2 = set(generate2(grammar, obj.expr[1], _sym_stack))
         return filter(lambda x: x not in e2, e1)
     elif isinstance(obj, CharClass) and not obj.invert:
         return obj.iter()
     elif isinstance(obj, Optional):
-        return itertools.chain(generate2(grammar, obj.expr), [''])
+        return itertools.chain(generate2(grammar, obj.expr, _sym_stack), [''])
     elif isinstance(obj, Sequence):
-        seq1 = generate2(grammar, obj.expr[0])
-        seq2 = generate2(grammar, obj.expr[1])
+        seq1 = generate2(grammar, obj.expr[0], _sym_stack)
+        seq2 = generate2(grammar, obj.expr[1], _sym_stack)
         return itertools.product(seq1, seq2)
+    elif isinstance(obj, Concat):
+        raise RecursionError(f"Generation of infinite productions through use of <{obj}> is not supported")
     else:
         raise NotImplementedError(f"Don't support {obj} ({type(obj)})")
 
-def isfinite(grammar, obj):
+def isfinite(grammar, obj, _symbol_stack = None):
+    if _symbol_stack is None:
+        # this is not really a stack, but since we're only searching
+        # for duplicates, this is acceptable. A list would potentially
+        # slow down the search.
+        _symbol_stack = set()
+
     if isinstance(obj, (String, CharClass)):
         return True
     elif isinstance(obj, Symbol):
-        return isfinite(grammar, grammar[obj.value])
+        if obj.value in _symbol_stack: return False # recursion!
+
+        _symbol_stack.add(obj.value)
+        x = isfinite(grammar, grammar[obj.value], _symbol_stack)
+        _symbol_stack.remove(obj.value)
+
+        return x
     elif isinstance(obj, BinOp):
-        return isfinite(grammar, obj.expr[0]) and isfinite(grammar, obj.expr[1])
+        return isfinite(grammar, obj.expr[0], _symbol_stack) and isfinite(grammar, obj.expr[1], _symbol_stack)
     elif isinstance(obj, Optional):
-        return isfinite(grammar, obj.expr)
+        return isfinite(grammar, obj.expr, _symbol_stack)
     elif isinstance(obj, Concat):
         return False
     else:
@@ -146,3 +167,29 @@ def test_visit_gen():
     gen = generate2(r, r['set_stype'])
     for l in gen:
         print(visit_gen(l, visitor_make_sequence))
+
+def test_isfinite():
+    p = EBNFParser()
+    r = p.parse("a_star_bnf ::= '' | 'a' a_star_bnf", as_dict=True)
+
+    assert not isfinite(r, r['a_star_bnf'])
+
+def test_infinite_gen():
+    p = EBNFParser()
+    r = p.parse("""a_star_bnf ::= '' | 'a' a_star_bnf
+
+a_star ::= 'a'*
+
+""", as_dict=True)
+
+    #TODO: make sure these are thrown
+    try:
+        generate2(r, r['a_star'])
+    except RecursionError:
+        pass
+
+    try:
+        generate2(r, r['a_star_bnf'])
+    except RecursionError:
+        pass
+
