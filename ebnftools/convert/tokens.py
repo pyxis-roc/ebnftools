@@ -22,7 +22,10 @@ class TknRegExp(object):
         self.value = re # must be a string in /regexp/ format
 
     def key(self):
-        return self.re
+        return str(self)
+
+    def __str__(self):
+        return "/" + self.value + "/"
 
 class TokenRegistry(object):
     """A token registry is a file that maps token names to patterns. The
@@ -43,6 +46,19 @@ class TokenRegistry(object):
         self.tokens = set()
         self.v2n = {}
 
+    def remove(self, token):
+        if token not in self.tokens:
+            raise KeyError(f"Token {token} not found")
+
+        for t in self.v2n:
+            if self.v2n[t] == token:
+                break
+        else:
+            assert False, f"Token {token} not found " # this is inconsistency!
+
+        del self.v2n[t]
+        self.tokens.remove(token)
+
     def add(self, token, value):
         assert isinstance(value, (TknLiteral, TknCharClass, TknRegExp)), f"Incorrect type {type(value)} for {value}"
 
@@ -60,7 +76,7 @@ class TokenRegistry(object):
         tokens = set()
 
         with open(self.fn, "r") as f:
-            for lno, l in enumerate(f):
+            for lno, l in enumerate(f, 1):
                 ls = l.strip().split(' ', 1)
                 if ls[0] == "#": continue
 
