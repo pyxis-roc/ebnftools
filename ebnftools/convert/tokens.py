@@ -45,18 +45,18 @@ class TokenRegistry(object):
         self.fn = fn
         self.tokens = set()
         self.v2n = {}
+        self.n2v = {}
 
     def remove(self, token):
         if token not in self.tokens:
             raise KeyError(f"Token {token} not found")
 
-        for t in self.v2n:
-            if self.v2n[t] == token:
-                break
-        else:
-            assert False, f"Token {token} not found " # this is inconsistency!
+        value = self.n2v[token]
 
-        del self.v2n[t]
+        assert value in self.v2n, f"Internal inconsistency between n2v and v2n, token {token} value {value} not found in v2n"
+
+        del self.n2v[token]
+        del self.v2n[value]
         self.tokens.remove(token)
 
     def add(self, token, value):
@@ -69,10 +69,12 @@ class TokenRegistry(object):
             raise ValueError(f"Duplicate value {value}")
 
         self.v2n[value.key()] = token
+        self.n2v[token] = value
         self.tokens.add(token)
 
     def read(self):
         v2n = {}
+        n2v = {}
         tokens = set()
 
         with open(self.fn, "r") as f:
@@ -103,9 +105,11 @@ class TokenRegistry(object):
                     value = TknRegExp(value[1:-1])
 
                 v2n[value.key()] = name
+                n2v[name] = value
                 tokens.add(name)
 
         self.v2n = v2n
+        self.n2v = n2v
         self.tokens = tokens
 
     def write(self, filename = None):
