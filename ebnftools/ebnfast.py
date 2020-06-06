@@ -192,14 +192,19 @@ class Rule(object):
         return ('::=', self.children)
 
 
-def visit_rule_dict(grammar, node, vfn, vfn_args = []):
+def visit_rule_dict(grammar, node, vfn, vfn_args = [], _visited = None):
+    if _visited is None:
+        _visited = set()
+
     vfn(node, *vfn_args)
 
     if isinstance(node, Symbol):
-        visit_rule_dict(grammar, grammar[node.value], vfn, vfn_args)
+        if node.value not in _visited:
+            _visited.add(node.value)
+            visit_rule_dict(grammar, grammar[node.value], vfn, vfn_args, _visited)
     else:
         for c in node.children:
-            visit_rule_dict(grammar, c, vfn, vfn_args)
+            visit_rule_dict(grammar, c, vfn, vfn_args, _visited)
 
 def visit_rules(rules, start, vfn, vfn_args = []):
     grammar = dict([(r.lhs.value, r.rhs) for r in rules])
@@ -207,8 +212,8 @@ def visit_rules(rules, start, vfn, vfn_args = []):
         # visit all the rules
         for r in rules:
             n = grammar[r.lhs.value]
-            vfn(r, *vfn_args)
-            vfn(r.lhs.value, *vfn_args)
+            vfn(r, *vfn_args) # visit rule
+            vfn(r.lhs, *vfn_args) # visit LHS symbol
             visit_rule_dict(grammar, n, vfn, vfn_args)
     else:
         start_node = grammar[start]
@@ -682,3 +687,18 @@ content	   ::=   	CharData? ((element | Reference | CDSect | PI | Comment) CharD
     rl = xf.visit_RuleList(rules)
     print(rules, rl)
 
+def test_visitor_infinite_loop():
+    p = EBNFParser()
+    rules = p.parse("""
+wsp ::= [#x20#x9]
+bnf_concat_instruction ::= wsp | wsp bnf_concat_instruction
+instruction ::= 'add' bnf_concat_instruction args ';'
+bnf_concat_args ::= [^;] | [^;] bnf_concat_args
+args ::= bnf_concat_args
+""")
+
+    def _visit(n):
+        print(n)
+
+    # shouldn't raise RecursionError
+    visit_rules(rules, '*', _visit)
