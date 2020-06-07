@@ -53,10 +53,10 @@ class TokenRegistry(object):
 
         value = self.n2v[token]
 
-        assert value in self.v2n, f"Internal inconsistency between n2v and v2n, token {token} value {value} not found in v2n"
+        assert value.key() in self.v2n, f"Internal inconsistency between n2v and v2n, token {token} value {value} not found in v2n"
 
         del self.n2v[token]
-        del self.v2n[value]
+        del self.v2n[value.key()]
         self.tokens.remove(token)
 
     def add(self, token, value):
