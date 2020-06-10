@@ -19,28 +19,15 @@
 try:
     from .ebnfast import *
     from .ebnfgen import *
+    from .ebnfanno import *
 except ImportError:
     from ebnfast import *
     from ebnfgen import *
+    from ebnfanno import *
 
 import itertools
 
-# expr ::= implication
-#
-# implication ::= xjunction '=>' expr
-
-# xjunction ::=  term | term 'and' xjunction | term 'or' xjunction | '(' expr ')' | 'not' xjunction
-#
-# term ::= symbol '=' symbol | symbol '=' string
-
-# based on smt2ast parser
-class SExprList(object):
-    def __init__(self, *args):
-        self.value = args
-
-    def __str__(self):
-        return f"({' '.join([str(s) for s in self.value])})"
-
+# deprecated
 class ConstraintParser(object):
     def tokenize(self, data):
         # based on the example in the re docs
@@ -113,6 +100,7 @@ class ConstraintParser(object):
         else:
             raise ValueError(f"Parse resulted in multiple items! {out}")
 
+# deprecated
 def parse_constraint(line):
     cmd, r, cons = line.split(':', 3)
 
@@ -124,6 +112,7 @@ def parse_constraint(line):
 
     return ([rr.strip() for rr in r.split(",")], cons, cmd == "CONSTRAINT_DEBUG")
 
+# deprecated: use handle_constraints
 def parse_constrained_grammar(src, parse_grammar = True, apply_constraints = False):
     """A constrained grammar is a standard grammar that EBNFParse can
        parse plus embedded constraints, one per line, as:
@@ -169,6 +158,90 @@ def parse_constrained_grammar(src, parse_grammar = True, apply_constraints = Fal
 
     return constraints, gr, cgr
 
+# this conversion should be done when parsing annotations?
+def parse_constraint(cons):
+    x = cons
+
+    if isinstance(x, (Symbol, String)):
+        return x
+
+    assert isinstance(x, SExprList), f"Unexpected node: {x}"
+    if len(x.value):
+        sym = x.value[0].value
+        if sym == "eq":
+            assert len(x.value) == 3, f"eq needs two arguments: {x}"
+            x = Equals(parse_constraint(x.value[1]), parse_constraint(x.value[2]))
+        elif sym == "not":
+            assert len(x.value) == 2, f"not needs one argument: {x}"
+            x = Not(parse_constraint(x.value[1]))
+        elif sym == "imp":
+            assert len(x.value) == 3, f"eq needs two arguments: {x}"
+            x = Imp(parse_constraint(x.value[1]), parse_constraint(x.value[2]))
+        elif sym == "and":
+            assert len(x.value) >= 3, f"and needs at least two arguments: {x}"
+            x = And([parse_constraint(xx) for xx in x.value[1:]])
+        elif sym == "or":
+            assert len(x.value) >= 3, f"or needs at least two arguments: {x}"
+            x = Or([parse_constraint(xx) for xx in x.value[1:]])
+        else:
+            raise NotImplementedError(f"Unknown symbol {x.value[0]}, in {x}")
+    else:
+        raise ValueError(f"Empty list not supported")
+
+    return x
+
+def convert2constraint(anno):
+    """Convert the generic annotation AST into a ConstraintAST"""
+
+    if len(anno.value) != 3:
+        raise ValueError(f"Syntax error: Constraint annotation {anno} does not have three arguments")
+
+    if isinstance(anno.value[1], SExprList):
+        if not all((isinstance(x, Symbol) for x in anno.value[1].value)):
+            # we could allow strings maybe ... if needed
+            raise ValueError(f"Syntax error: {anno.value[1]} must be a list of symbols")
+
+        rules = [r.value for r in anno.value[1].value]
+    elif isinstance(anno.value[1], Symbol):
+        rules = [anno.value[1].value]
+    else:
+        raise ValueError(f"Syntax error: {anno.value[1]} must be a list or a symbol")
+
+
+    return (rules, parse_constraint(anno.value[2]), anno.value[0].value == "CONSTRAINT_DEBUG")
+
+def handle_constraints(ebnf, anno):
+    """Extracts constraint annotations from `anno` and applies them to the grammar."""
+
+    constraints = {}
+    debug_constraints = set()
+    gr = []
+    for a in anno:
+        if a.value[0].value in ('CONSTRAINT', 'CONSTRAINT_DEBUG'):
+            r, c, dbg = convert2constraint(a)
+            for rr in r:
+                if rr not in constraints:
+                    constraints[rr] = []
+
+                if dbg: debug_constraints.add(rr)
+                constraints[rr].append(c)
+
+    ca = []
+    for r in constraints:
+        ca.append(Constraint(r, constraints[r], debug = r in debug_constraints))
+
+    cgr = None
+    constraints = ca
+
+    p = EBNFParser()
+    gr = '\n'.join(ebnf)
+    gr = p.parse(gr)
+
+    cgr = apply_grammar_constraints(constraints, gr)
+
+    return gr, cgr
+
+
 def apply_grammar_constraints(constraints, grammar):
     grd = dict([(rule.lhs.value, rule.rhs) for rule in grammar])
     apply_constraints(grd, constraints)
@@ -186,7 +259,7 @@ class Constraint(object):
         self.debug = debug
 
     def __str__(self):
-        return f"{self.rule}: {';'.join([str(s) for s in self.constraints])}"
+        return f"{self.rule}: {'; '.join([str(s) for s in self.constraints])}"
 
 class EnumerationSolver(object):
     def __init__(self, grammar, constraint):
