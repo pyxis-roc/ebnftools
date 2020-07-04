@@ -26,14 +26,15 @@ import re
 
 # reuse AST nodes, but pretend they belong here (i.e. users should use ebnfanno.Symbol)
 try:
-    from .ebnfast import Symbol, String
+    from .ebnfast import Symbol, String, Coord
 except ImportError:
-    from ebnfast import Symbol, String
+    from ebnfast import Symbol, String, Coord
 
 # based on smt2ast parser
 class SExprList(object):
     def __init__(self, *args):
         self.value = args
+        self.coord = None
 
     def __str__(self):
         return f"({' '.join([str(s) for s in self.value])})"
@@ -93,7 +94,8 @@ class AnnoParser(object):
         except StopIteration:
             raise ValueError(f"Unexpected end of input when tokenizing")
 
-    def parse(self, llstr, dataiter, token_stream = None):
+    def parse(self, llstr, dataiter, linepos, token_stream = None):
+        start = linepos.curline
         if token_stream is None:
             token_stream = self.tokenize(llstr, dataiter)
 
@@ -105,7 +107,7 @@ class AnnoParser(object):
                     return SExprList(*out)
                     # TODO: possibly add a validator here?
                 elif tkn == "LPAREN":
-                    out.append(self.parse(llstr, dataiter, token_stream))
+                    out.append(self.parse(llstr, dataiter, linepos, token_stream))
                 elif tkn == "SYMBOL":
                     out.append(Symbol(match))
                 elif tkn == "STRING1" or tkn == "STRING2":
@@ -117,6 +119,9 @@ class AnnoParser(object):
             pass
 
         if len(out) == 1:
+            if isinstance(out[0], SExprList):
+                out[0].coord = Coord(start, start, linepos.curline)
+
             return out[0]
         else:
             raise ValueError(f"Parse resulted in multiple items! {out}")
@@ -127,6 +132,10 @@ class LineConsumer(object):
         self.start = start
         self.next_start = 0
 
+    @property
+    def curline(self):
+        return self.next_start+1 # use 1-based
+
     def lines(self):
         for l in range(self.start, len(self.la)):
             self.next_start = l
@@ -136,7 +145,8 @@ def parse_annotated_grammar(gr):
     #data = [l + '\n' for l in gr.split('\n')]
     data = gr.split('\n')
 
-    lc = LineConsumer(data).lines()
+    lco = LineConsumer(data)
+    lc = lco.lines()
     p = AnnoParser()
 
     ebnf = []
@@ -147,7 +157,7 @@ def parse_annotated_grammar(gr):
             if l and l[0] == '@': # forces first character to be '@', no leading whitespace allowed
 
                 # we discard everything on the same line after the ending ')'
-                anno.append(p.parse(l[1:], lc))
+                anno.append(p.parse(l[1:], lc, lco))
             else:
                 ebnf.append(l)
     except StopIteration:

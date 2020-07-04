@@ -8,6 +8,12 @@
 
 import re
 
+class Coord(object):
+    def __init__(self, order, linestart = None, lineend = None, colstart = None, colend = None):
+        self.order = order # monotonically increasing based on some opaque criteria
+        self.line = (linestart, lineend)
+        self.col = (colstart, colend)
+
 class Expression(object):
     _explicit_paren = False
     children = []
@@ -491,6 +497,8 @@ class EBNFParser(object):
         out = []
         while True:
             tkn, match = token_stream.consume()
+            sline = token_stream.coord[0]
+
             if tkn == "COMMENT":
                 continue
             elif tkn == "SYMBOL":
@@ -503,7 +511,9 @@ class EBNFParser(object):
 
                 token_stream.expect('RULEDEF')
                 rhs = self.parse_expr(token_stream)
-                out.append(Rule(Symbol(lhs), rhs))
+                rule = Rule(Symbol(lhs), rhs)
+                rule.coord = Coord(sline) # TODO...
+                out.append(rule)
             elif tkn is None:
                 break
             elif tkn == 'EOL':
