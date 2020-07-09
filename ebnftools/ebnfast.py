@@ -33,6 +33,9 @@ class Symbol(Expression):
     def __str__(self):
         return self.value
 
+    def __repr__(self):
+        return f"Symbol({repr(self.value)})"
+
     def graph(self):
         return (str(self), [])
 
@@ -44,6 +47,9 @@ class Char(Expression):
     def __str__(self):
         return f"#x{self.value:x}"
 
+    def __repr__(self):
+        return f"Char({repr(self.v)})"
+
     def graph(self):
         return (str(self), [])
 
@@ -54,6 +60,9 @@ class String(Expression):
 
     def __str__(self):
         return "'" + self.value + "'"
+
+    def __repr__(self):
+        return f"String({repr(self.value)})"
 
     def graph(self):
         return (str(self), [])
@@ -116,6 +125,9 @@ class CharClass(Expression):
     def __str__(self):
         return f"[{'^' if self.invert else ''}{self.c_and_r}]"
 
+    def __repr__(self):
+        return f"CharClass({repr(str(self))})"
+
     def graph(self):
         return (str(self), [])
 
@@ -128,6 +140,9 @@ class Optional(Expression):
 
     def __str__(self):
         return f"{self.paren(self.expr)}?"
+
+    def __repr__(self):
+        return f"Optional({repr(self.expr)})"
 
     def graph(self):
         return ("?", self.children)
@@ -153,6 +168,9 @@ class BinOp(Expression):
 
         return f"{x1}{o}{x2}"
 
+    def __repr__(self):
+        return f"{self.__classname__}({repr(self.expr[0])}, {repr(self.expr[1])})"
+
     def graph(self):
         return (self.op.strip(), self.children)
 
@@ -160,13 +178,23 @@ class Sequence(BinOp):
     precedence = 0
     op = ' '
 
+    def __repr__(self):
+        return f"Sequence({repr(self.expr[0])}, {repr(self.expr[1])})"
+
 class Alternation(BinOp):
     precedence = 2
     op = ' | '
 
+    def __repr__(self):
+        return f"Alternation({repr(self.expr[0])}, {repr(self.expr[1])})"
+
+
 class Subtraction(BinOp):
     precedence = 3 #???
     op = ' - '
+
+    def __repr__(self):
+        return f"Subtraction({repr(self.expr[0])}, {repr(self.expr[1])})"
 
 # handles both one or more, zero or more
 class Concat(Expression):
@@ -182,6 +210,9 @@ class Concat(Expression):
         #print("STR", self.expr)
         return f"{self.paren(self.expr)}{suffix}"
 
+    def __repr__(self):
+        return f"Concat({repr(self.expr)}, {self.minimum})"
+
     def graph(self):
         return ('*' if self.minimum == 0 else '+', self.children)
 
@@ -193,6 +224,9 @@ class Rule(object):
 
     def __str__(self):
         return f"{self.lhs} ::= {self.rhs}"
+
+    def __repr__(self):
+        return f"Rule({repr(self.lhs)}, {repr(self.rhs)})"
 
     def graph(self):
         return ('::=', self.children)
@@ -260,6 +294,84 @@ def generate_graph(root, output_routine, rule_dict):
     edgelist = {}
     visualize_ast(root, edgelist, rule_dict)
     return output_routine(edgelist)
+
+def unfold_associative(root, cls):
+    """Converts cls(a, cls(b, cls(c, d))) to [a, b, c, d]"""
+    out = []
+
+    if not isinstance(root.expr[0], cls):
+        out.append(root.expr[0])
+    else:
+        out.extend(unfold_associative(root.expr[0], cls))
+
+    if not isinstance(root.expr[1], cls):
+        out.append(root.expr[1])
+    else:
+        out.extend(unfold_associative(root.expr[1], cls))
+
+    return out
+
+def compute_treepos(obj, path_to_objs, path_prefix = (), parent = None, node_index = 1, _DEBUG = False):
+    """Compute treepos values for each item in obj (which, when invoked, is rule.rhs).
+
+       Sequence: A B C D gets number 1 2 3 4
+       Alternation: A | B | C | D gets 1 for the whole alternation, then (1, 1) for A, ..., (1, 4) for D
+    """
+
+    treepos = (*path_prefix, node_index)
+
+    if _DEBUG:
+        print(obj, "\t", parent, "\t*", parent._treepos if parent is not None and hasattr(parent, '_treepos') else "", "*\t", treepos, node_index)
+
+    if isinstance(obj, Symbol):
+        obj._treepos = treepos
+        path_to_objs[obj._treepos] = obj
+        return 1
+    elif isinstance(obj, String):
+        obj._treepos = treepos
+        path_to_objs[obj._treepos] = obj
+        return 1
+    elif isinstance(obj, Subtraction):
+        obj._treepos = treepos
+        path_to_objs[obj._treepos] = obj
+
+        # don't support internal naming for subtraction
+        return 1
+    elif isinstance(obj, CharClass):
+        obj._treepos = treepos
+        path_to_objs[obj._treepos] = obj
+
+        return 1
+    elif isinstance(obj, (Optional, Concat)):
+        obj._treepos = treepos
+        path_to_objs[obj._treepos] = obj
+
+        compute_treepos(obj.expr, path_to_objs, treepos, obj, 1)
+        return 1
+    elif isinstance(obj, Alternation):
+        obj._treepos = treepos
+        path_to_objs[obj._treepos] = obj
+        seq = unfold_associative(obj, Alternation)
+        if _DEBUG: print(seq)
+
+        for node_index, s in enumerate(seq, 1):
+            if isinstance(s, Sequence):
+                # provide a handle for entire sequence
+                path_to_objs[(*obj._treepos, node_index)] = s
+                compute_treepos(s, path_to_objs, (*obj._treepos, node_index), obj, 1)
+            else:
+                compute_treepos(s, path_to_objs, obj._treepos, obj, node_index)
+
+        return 1
+    elif isinstance(obj, Sequence):
+        #obj._treepos = treepos # no way to refer to sequence objects?
+        #path_to_objs[obj._treepos] = obj
+
+        consumed = compute_treepos(obj.expr[0], path_to_objs, tuple(treepos[:-1]), obj, node_index)
+        consumed += compute_treepos(obj.expr[1], path_to_objs, tuple(treepos[:-1]),  obj, node_index + consumed)
+        return consumed
+    else:
+        raise NotImplementedError(f"Don't support {obj}")
 
 #TODO: comments, [ wfc: ] [ vc: ] occur at the end
 
