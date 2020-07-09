@@ -30,6 +30,13 @@ try:
 except ImportError:
     from ebnfast import Symbol, String, Coord
 
+class Number(object):
+    def __init__(self, v):
+        self.value = v
+
+    def __str__(self):
+        return str(self.value)
+
 # based on smt2ast parser
 class SExprList(object):
     def __init__(self, *args):
@@ -39,6 +46,9 @@ class SExprList(object):
     def __str__(self):
         return f"({' '.join([str(s) for s in self.value])})"
 
+
+def Anno(name, value):
+    return SExprList(Symbol(name) if isinstance(name, str) else name, *value)
 
 # annotations start with a @ symbol as the first character of the line
 # They are followed by by S-expression list @(), that can contain the following tokens:
@@ -190,3 +200,4 @@ cvt_dty_i ::= unsigned | signed | u8 | s8
 
     out2, anno2 = parse_annotated_grammar(data3)
     print(out2, [str(s) for s in anno2])
+    

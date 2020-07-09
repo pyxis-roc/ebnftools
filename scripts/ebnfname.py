@@ -2,6 +2,7 @@
 
 from ebnftools.ebnfgrammar import EBNFAnnotatedGrammar
 from ebnftools.ebnfast import *
+import ebnftools.anno.names as ebnfnames
 
 import argparse
 _DEBUG = False
@@ -83,6 +84,8 @@ def get_default_name(construct, oldname, already_assigned, paths):
 
     assert name not in already_assigned, f"{name}, {already_assigned}"
 
+    already_assigned.add(name)
+
     return name
 
 
@@ -110,7 +113,10 @@ if __name__ == '__main__':
             aa = set()
             pgr.name_objects(tp.values(), get_default_name, aa, tp)
 
-            for k, v in tp.items():
-            #    n = get_default_name(v, k, aa)
-                print(k, v, v._name)
-            #    aa.add(n)
+            if args.debug:
+                for k, v in tp.items():
+                    print(k, v, v._name)
+
+            x = ebnfnames.NamesAnno(r.lhs.value, dict([(k, v._name) for k, v in tp.items()]))
+            a = x.to_anno()
+            print("@" + str(a))
