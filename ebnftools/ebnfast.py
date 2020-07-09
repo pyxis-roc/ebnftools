@@ -265,7 +265,6 @@ def visualize_ast(root, edgelist, rule_dict = None):
     if key in edgelist:
         return
 
-    print(root)
     label, children = root.graph()
 
     if isinstance(root, Symbol) and rule_dict and label in rule_dict:
@@ -357,7 +356,8 @@ def compute_treepos(obj, path_to_objs, path_prefix = (), parent = None, node_ind
         for node_index, s in enumerate(seq, 1):
             if isinstance(s, Sequence):
                 # provide a handle for entire sequence
-                path_to_objs[(*obj._treepos, node_index)] = s
+                s._treepos = (*obj._treepos, node_index)
+                path_to_objs[s._treepos] = s
                 compute_treepos(s, path_to_objs, (*obj._treepos, node_index), obj, 1)
             else:
                 compute_treepos(s, path_to_objs, obj._treepos, obj, node_index)
@@ -761,7 +761,7 @@ def test_graph_gen():
 
     x = p.parse("content	   ::=   	CharData? ((element | Reference | CDSect | PI | Comment) CharData?)*")
 
-    g = generate_graph(x[0], generate_dot)
+    g = generate_graph(x[0], generate_dot, dict([(r.lhs.value, r.rhs) for r in x]))
     with open("/tmp/g.dot", "w") as f:
         for l in g:
             print(l, file=f)

@@ -1,0 +1,9 @@
+alt1 ::= A | B
+alt2 ::= A | B | C
+alt3 ::= (A | B) | C
+alt4 ::= (A | B) | (C | D)
+alt5 ::= A | B | C | D
+alt6 ::= A B (C | D | E)
+alt7 ::= C | D | E F
+alt8 ::= C | (E F (A | B) H I) | D
+

@@ -1,0 +1,16 @@
+literal_rule ::= 'hello'
+@(DOMAIN_RESTRICTION literal_rule ('hello' 'hi'))
+
+sequence_rule ::= literal_rule literal_rule
+
+subtraction ::= literal_rule - 'world'
+
+optional_rule ::= literal_rule?
+
+zero_or_more ::= literal_rule*
+
+one_or_more ::= literal_rule+
+
+alt_rule ::= literal_rule | sequence_rule
+
+sequence_with_opt ::= literal_rule (' ' 'world' ('!' | 'a' literal_rule '?')?)?
