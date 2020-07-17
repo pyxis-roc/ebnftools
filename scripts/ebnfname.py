@@ -6,6 +6,7 @@ import ebnftools.anno.names as ebnfnames
 
 import argparse
 _DEBUG = False
+_USING_NAMESPACE = True
 
 # unused, may be useful?
 def get_rule_symbols(obj, symbols = None):
@@ -44,13 +45,19 @@ def get_default_name(construct, oldname, already_assigned, paths):
 
     assert hasattr(construct, '_treepos')
 
+    if _USING_NAMESPACE:
+        path = construct._treepos[1]
+    else:
+        path = construct._treepos
+
     # try to find parent who has a name
-    path = construct._treepos
     for r in range(len(path), 0, -1):
         pp = path[:r]
-        if pp in paths:
-            if hasattr(paths[pp], '_name'):
-                path_str = paths[pp]._name + "_" + '_'.join([str(s) for s in path[r:]])
+        key = (construct._treepos[0], pp) if _USING_NAMESPACE else pp
+
+        if key in paths:
+            if hasattr(paths[key], '_name'):
+                path_str = paths[key]._name + "_" + '_'.join([str(s) for s in path[r:]])
                 break
     else:
         # nope, just use the path
@@ -109,7 +116,7 @@ if __name__ == '__main__':
         if r.lhs.value == args.rule or args.rule == 'all':
             print(r)
             if args.ast: print(repr(r))
-            tp = pgr.get_treepos(r)
+            tp = pgr.compute_treepos(r, use_ns = _USING_NAMESPACE)
             aa = set()
             pgr.name_objects(tp.values(), get_default_name, aa, tp)
 

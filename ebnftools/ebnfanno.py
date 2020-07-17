@@ -69,6 +69,7 @@ class AnnoParser(object):
                   ('STRING2', r"'[^']*'"),
                   ('LPAREN', r'\('),
                   ('RPAREN', r'\)'),
+                  ('NUMBER', r'[0-9]+'),
                   ('SYMBOL', r'[A-Za-z_][A-Za-z0-9_]*'),
                   ('WHITESPACE', r'\s+'),
                   ('MISMATCH', r'.'),]
@@ -87,7 +88,7 @@ class AnnoParser(object):
                     self.consumed += len(match)
                     if token == 'MISMATCH':
                         self.consumed -= len(match)
-                        raise ValueError(f"Mismatch {match} (when parsing {data})")
+                        raise ValueError(f"Mismatch '{match}' (when parsing {data})")
                     elif token == 'WHITESPACE':
                         pass
                     else:
@@ -120,6 +121,8 @@ class AnnoParser(object):
                     out.append(self.parse(llstr, dataiter, linepos, token_stream))
                 elif tkn == "SYMBOL":
                     out.append(Symbol(match))
+                elif tkn == "NUMBER":
+                    out.append(Number(int(match, 10)))
                 elif tkn == "STRING1" or tkn == "STRING2":
                     out.append(String(match[1:-1]))
                 else:

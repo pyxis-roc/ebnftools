@@ -41,8 +41,24 @@ class EBNFGrammar(object):
             obj._name = namer(obj, oldname, *namer_args)
 
     def get_treepos(self, rule):
+        def add_to_treepos(n, tp):
+            if hasattr(n, '_treepos'):
+                tp.append((n._treepos, n))
+
+            if True and hasattr(n, '_from_treepos'):
+                tp.append((n._from_treepos, n))
+
+        # use a list, so we don't make assumptions about duplicates
+        # which can occur, esp. for _from_treepos
+        treepos = []
+
+        ebnfast.visit_rule_dict(self.ruledict, rule.rhs, add_to_treepos, [treepos], descend_symbols = False)
+
+        return treepos
+
+    def compute_treepos(self, rule, use_ns = True):
         path_to_objs = OrderedDict()
-        ebnfast.compute_treepos(rule.rhs, path_to_objs)
+        ebnfast.compute_treepos(rule.rhs, path_to_objs, ns = rule.lhs.value if use_ns else None)
 
         return path_to_objs
 
@@ -71,6 +87,9 @@ class EBNFGrammar(object):
         p = parser.parse(grammar)
 
         self._set_raw(p)
+
+    def from_rules(self, rules):
+        self._set_raw(rules)
 
 class EBNFAnnotatedGrammar(EBNFGrammar):
     @property
@@ -133,3 +152,22 @@ class EBNFAnnotatedGrammar(EBNFGrammar):
         self._anno = anno # this is parsed
         super(EBNFAnnotatedGrammar, self).parse('\n'.join(gr), preserve_comments)
 
+    def from_rules(self, rules, anno = []):
+        self._anno = anno # this is parsed
+
+        # order is a bad design... remove it
+        # make annotations follow the rule they reference
+        
+        last_order = None
+        for r in rules:
+            if not hasattr(r, 'coord'):
+                assert False, r
+
+            print(r, r.coord.order)
+            if last_order is not None:
+                if not (last_order < r.coord.order):
+                    assert len(last_order) != r.coord.order, f"{r} {r.coord.order} {last_order}"
+
+            last_order = r.coord.order
+
+        super(EBNFAnnotatedGrammar, self).from_rules(rules)

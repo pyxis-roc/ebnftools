@@ -6,7 +6,17 @@ from collections import OrderedDict
 class NamesAnno(object):
     def __init__(self, rule_name, tree_pos_to_names):
         self.rule_name = rule_name
-        self.tp2n = tree_pos_to_names
+
+        for x in tree_pos_to_names:
+            if isinstance(x[0], str):
+                assert x[0] == self.rule_name, f"Namespace {x[0]} must match rule name {self.rule_name}"
+                # strip namespaces
+                self.tp2n = dict([(k[1], v) for k, v in tree_pos_to_names.items()])
+
+            break
+
+        if not hasattr(self, 'tp2n'):
+            self.tp2n = tree_pos_to_names
 
     def name_objects(self, obj, oldname):
         assert hasattr(obj, '_treepos'), f"{obj} does not have a treepos"
@@ -47,6 +57,8 @@ class NamesAnno(object):
             else:
                 out.append(SExprList(SExprList(*pfx), Symbol(o)))
 
+        # TODO: order names in BFS order
+
         return Anno('NAMEPOS', out)
 
     @staticmethod
@@ -58,7 +70,7 @@ class NamesAnno(object):
                 # name start
                 if isinstance(pp.value[0], Symbol) and isinstance(pp.value[1], numtype):
                     if pp.value[0].value not in name2pos:
-                        raise ValueError(f"Name {pp.value[0]} used path prefix {pp}, but has not been defined")
+                        raise ValueError(f"Name '{pp.value[0]}' used in path prefix {pp}, but has not been defined. Names so far: {list(name2pos.keys())}")
                     return (*name2pos[pp.value[0].value], pp.value[1].value)
                 elif isinstance(pp.value[0], numtype) and isinstance(pp.value[1], numtype):
                     return (pp.value[0].value, pp.value[1].value)
@@ -99,11 +111,11 @@ class NamesAnno(object):
                     raise ValueError(f"Name must be a symbol {sym} (in '{a}')")
 
                 if sym.value in name2pos:
-                    raise ValueError(f"Name {sym} duplicated in {a}")
+                    raise ValueError(f"WARNING: Name '{sym}' duplicated in {a}, this is okay if done at the same prefix level, but not checked yet!")
 
                 npp = (*pp[:-1], pp[-1]+r)
                 if npp in pos2name:
-                    raise ValueError(f"Path prefix {npp} (specified as '{a}') is duplicated")
+                    raise ValueError(f"Path prefix {npp} (specified as '{a}') is duplicated, {pos2name}")
 
                 pos2name[npp] = sym.value
                 name2pos[sym.value] = npp

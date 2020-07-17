@@ -10,9 +10,12 @@ import re
 
 class Coord(object):
     def __init__(self, order, linestart = None, lineend = None, colstart = None, colend = None):
-        self.order = order # monotonically increasing based on some opaque criteria
+        self.order = (order,) if isinstance(order, int) else order # monotonically increasing based on some opaque criteria
         self.line = (linestart, lineend)
         self.col = (colstart, colend)
+
+    def __str__(self):
+        return f"{self.line}:{self.col}:{self.order}"
 
 class Expression(object):
     _explicit_paren = False
@@ -136,7 +139,10 @@ class Optional(Expression):
 
     def __init__(self, expr):
         self.expr = expr
-        self.children = [self.expr]
+
+    @property
+    def children(self):
+        return [self.expr]
 
     def __str__(self):
         return f"{self.paren(self.expr)}?"
@@ -152,7 +158,10 @@ class BinOp(Expression):
 
     def __init__(self, a, b):
         self.expr = [a, b]
-        self.children = self.expr
+
+    @property
+    def children(self):
+        return self.expr
 
     def __str__(self):
         x1 = self.paren(self.expr[0])
@@ -203,7 +212,10 @@ class Concat(Expression):
     def __init__(self, expr, minimum: int = 0):
         self.expr = expr
         self.minimum = minimum
-        self.children = [self.expr]
+
+    @property
+    def children(self):
+        return [self.expr]
 
     def __str__(self):
         suffix = '*' if self.minimum == 0 else '+'
@@ -220,7 +232,10 @@ class Rule(object):
     def __init__(self, lhs, rhs):
         self.lhs = lhs
         self.rhs = rhs
-        self.children = [self.lhs, self.rhs]
+
+    @property
+    def children(self):
+        return [self.lhs, self.rhs]
 
     def __str__(self):
         return f"{self.lhs} ::= {self.rhs}"
@@ -232,18 +247,19 @@ class Rule(object):
         return ('::=', self.children)
 
 
-def visit_rule_dict(grammar, node, vfn, vfn_args = [], _visited = None):
+def visit_rule_dict(grammar, node, vfn, vfn_args = [], descend_symbols = True, _visited = None):
     if _visited is None:
         _visited = set()
 
     vfn(node, *vfn_args)
 
     if isinstance(node, Symbol):
-        if node.value not in _visited:
+        if descend_symbols and node.value not in _visited:
             _visited.add(node.value)
-            visit_rule_dict(grammar, grammar[node.value], vfn, vfn_args, _visited)
+            visit_rule_dict(grammar, grammar[node.value], vfn, vfn_args, descend_symbols, _visited)
     else:
         for c in node.children:
+            # print("\tvisiting", node, c, node.children)
             visit_rule_dict(grammar, c, vfn, vfn_args, _visited)
 
 def visit_rules(rules, start, vfn, vfn_args = []):
@@ -310,7 +326,7 @@ def unfold_associative(root, cls):
 
     return out
 
-def compute_treepos(obj, path_to_objs, path_prefix = (), parent = None, node_index = 1, _DEBUG = False):
+def compute_treepos(obj, path_to_objs, path_prefix = (), parent = None, ns = None, node_index = 1, _DEBUG = False):
     """Compute treepos values for each item in obj (which, when invoked, is rule.rhs).
 
        Sequence: A B C D gets number 1 2 3 4
@@ -319,36 +335,41 @@ def compute_treepos(obj, path_to_objs, path_prefix = (), parent = None, node_ind
 
     treepos = (*path_prefix, node_index)
 
+    if ns:
+        nstreepos = (ns, treepos)
+    else:
+        nstreepos = treepos
+
     if _DEBUG:
         print(obj, "\t", parent, "\t*", parent._treepos if parent is not None and hasattr(parent, '_treepos') else "", "*\t", treepos, node_index)
 
     if isinstance(obj, Symbol):
-        obj._treepos = treepos
+        obj._treepos = nstreepos
         path_to_objs[obj._treepos] = obj
         return 1
     elif isinstance(obj, String):
-        obj._treepos = treepos
+        obj._treepos = nstreepos
         path_to_objs[obj._treepos] = obj
         return 1
     elif isinstance(obj, Subtraction):
-        obj._treepos = treepos
+        obj._treepos = nstreepos
         path_to_objs[obj._treepos] = obj
 
         # don't support internal naming for subtraction
         return 1
     elif isinstance(obj, CharClass):
-        obj._treepos = treepos
+        obj._treepos = nstreepos
         path_to_objs[obj._treepos] = obj
 
         return 1
     elif isinstance(obj, (Optional, Concat)):
-        obj._treepos = treepos
+        obj._treepos = nstreepos
         path_to_objs[obj._treepos] = obj
 
-        compute_treepos(obj.expr, path_to_objs, treepos, obj, 1)
+        compute_treepos(obj.expr, path_to_objs, treepos, obj, ns, 1)
         return 1
     elif isinstance(obj, Alternation):
-        obj._treepos = treepos
+        obj._treepos = nstreepos
         path_to_objs[obj._treepos] = obj
         seq = unfold_associative(obj, Alternation)
         if _DEBUG: print(seq)
@@ -356,19 +377,24 @@ def compute_treepos(obj, path_to_objs, path_prefix = (), parent = None, node_ind
         for node_index, s in enumerate(seq, 1):
             if isinstance(s, Sequence):
                 # provide a handle for entire sequence
-                s._treepos = (*obj._treepos, node_index)
+                if ns:
+                    s._treepos = (ns, (*treepos, node_index))
+                else:
+                    s._treepos = (*treepos, node_index)
+
                 path_to_objs[s._treepos] = s
-                compute_treepos(s, path_to_objs, (*obj._treepos, node_index), obj, 1)
+
+                compute_treepos(s, path_to_objs, (*treepos, node_index), obj, ns, 1, _DEBUG)
             else:
-                compute_treepos(s, path_to_objs, obj._treepos, obj, node_index)
+                compute_treepos(s, path_to_objs, treepos, obj, ns, node_index, _DEBUG)
 
         return 1
     elif isinstance(obj, Sequence):
         #obj._treepos = treepos # no way to refer to sequence objects?
         #path_to_objs[obj._treepos] = obj
 
-        consumed = compute_treepos(obj.expr[0], path_to_objs, tuple(treepos[:-1]), obj, node_index)
-        consumed += compute_treepos(obj.expr[1], path_to_objs, tuple(treepos[:-1]),  obj, node_index + consumed)
+        consumed = compute_treepos(obj.expr[0], path_to_objs, tuple(treepos[:-1]), obj, ns, node_index, _DEBUG)
+        consumed += compute_treepos(obj.expr[1], path_to_objs, tuple(treepos[:-1]),  obj, ns, node_index + consumed, _DEBUG)
         return consumed
     else:
         raise NotImplementedError(f"Don't support {obj}")
