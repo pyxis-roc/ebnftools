@@ -68,13 +68,36 @@ class EBNF2BNF(EBNFTransformer):
 
     def _new_rule(self, rule):
         k = str(rule.rhs)
+
+        #TODO: also add position information when deduping
+
         if k not in self._dedup_rules:
+            rule._namespace = self.rulename # descended from this rule
+            rule.coord = Coord((*self.coord.order, len(self.new_rules)),
+                               self.coord.line[0],
+                               self.coord.line[1],
+                               self.coord.col[0],
+                               self.coord.col[1])
+
             self.new_rules.append(rule)
             self._dedup_rules[k] = rule.lhs
 
         return self._dedup_rules[k]
 
+    def _copy_treepos(self, src, dst):
+        if hasattr(src, '_treepos'):
+            if not isinstance(src._treepos[0], str):
+                #print("NOT", src._treepos)
+                new_pos = (self.rulename, src._treepos)
+            else:
+                new_pos = src._treepos
+
+            #print("Setting position", new_pos, "on", dst)
+            dst._from_treepos = new_pos
+
+
     def visit_Rule(self, node):
+        self.coord = node.coord
         self.new_rules = []
         if not self.dedup_across_rules:
             self._dedup_rules = {}
@@ -86,7 +109,6 @@ class EBNF2BNF(EBNFTransformer):
         else:
             self.new_rules.append(node)
 
-        #print("***", self.new_rules)
         return self.new_rules
 
     def visit_Sequence(self, node):
@@ -106,6 +128,8 @@ class EBNF2BNF(EBNFTransformer):
                 else:
                     out = Alternation(out, pf)
 
+            self._copy_treepos(node, out)
+
             if len(self.stack) > 0:
                 return self._new_rule(Rule(Symbol(self._new_name("bnf_sub")), out))
             else:
@@ -122,8 +146,9 @@ class EBNF2BNF(EBNFTransformer):
 
         if is_top and len(self.stack) > 0:
             # chain the alternates into a new rule
-            return self._new_rule(Rule(Symbol(self._new_name("bnf_alt")),
-                                       Alternation(node.expr[0], node.expr[1])))
+            node_alternate = Alternation(node.expr[0], node.expr[1])
+            self._copy_treepos(node, node_alternate)
+            return self._new_rule(Rule(Symbol(self._new_name("bnf_alt")), node_alternate))
 
         return node
 
@@ -132,8 +157,11 @@ class EBNF2BNF(EBNFTransformer):
 
         #TODO: handle duplicate rules later ...?
         # expr? => '' | expr
-        return self._new_rule(Rule(Symbol(self._new_name("bnf_opt")),
-                                   Alternation(String(''), node.expr)))
+        node_opt = Alternation(String(''), node.expr)
+        #self._copy_treepos(node, node_opt.expr[0])
+        #self._copy_treepos(node, node_opt.expr)
+
+        return self._new_rule(Rule(Symbol(self._new_name("bnf_opt")), node_opt))
 
     def visit_Concat(self, node):
         node = super().visit_Concat(node)
@@ -150,6 +178,9 @@ class EBNF2BNF(EBNFTransformer):
         else:
             new_rule = Rule(new_name,
                             Alternation(node.expr, Sequence(node.expr, new_name)))
+
+        self._copy_treepos(node, new_rule.rhs.expr[0])
+        self._copy_treepos(node, new_rule.rhs.expr[1])
 
         return self._new_rule(new_rule)
 

@@ -326,7 +326,8 @@ def unfold_associative(root, cls):
 
     return out
 
-def compute_treepos(obj, path_to_objs, path_prefix = (), parent = None, ns = None, node_index = 1, _DEBUG = False):
+def compute_treepos(obj, path_to_objs, path_prefix = (),
+                    parent = None, ns = None, node_index = 1, _DEBUG = False):
     """Compute treepos values for each item in obj (which, when invoked, is rule.rhs).
 
        Sequence: A B C D gets number 1 2 3 4
@@ -339,6 +340,9 @@ def compute_treepos(obj, path_to_objs, path_prefix = (), parent = None, ns = Non
         nstreepos = (ns, treepos)
     else:
         nstreepos = treepos
+
+    if hasattr(obj, '_treepos'):
+        obj._old_treepos = obj._treepos
 
     if _DEBUG:
         print(obj, "\t", parent, "\t*", parent._treepos if parent is not None and hasattr(parent, '_treepos') else "", "*\t", treepos, node_index)

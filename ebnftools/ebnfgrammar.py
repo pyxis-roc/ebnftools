@@ -5,7 +5,9 @@
 
 from . import ebnfast
 from . import ebnfanno
-from collections import OrderedDict
+from collections import OrderedDict, namedtuple
+
+Treepos = namedtuple('Treepos', 'node current original previous')
 
 class EBNFGrammar(object):
     @property
@@ -42,17 +44,28 @@ class EBNFGrammar(object):
 
     def get_treepos(self, rule):
         def add_to_treepos(n, tp):
-            if hasattr(n, '_treepos'):
-                tp.append((n._treepos, n))
+            cur = None # result of compute_treepos
+            orig = None # created during conversion
+            prev = None # result of previous compute_treepos
 
-            if True and hasattr(n, '_from_treepos'):
-                tp.append((n._from_treepos, n))
+            if hasattr(n, '_treepos'):
+                cur = n._treepos
+
+            if  hasattr(n, '_from_treepos'):
+                orig = n._from_treepos
+
+            if hasattr(n, '_old_treepos'):
+                prev = n._old_treepos
+
+            tp.append(Treepos(current = cur, original = orig, previous = prev, node = n))
+
 
         # use a list, so we don't make assumptions about duplicates
         # which can occur, esp. for _from_treepos
         treepos = []
 
-        ebnfast.visit_rule_dict(self.ruledict, rule.rhs, add_to_treepos, [treepos], descend_symbols = False)
+        ebnfast.visit_rule_dict(self.ruledict, rule.rhs, add_to_treepos,
+                                [treepos], descend_symbols = False)
 
         return treepos
 
@@ -157,13 +170,13 @@ class EBNFAnnotatedGrammar(EBNFGrammar):
 
         # order is a bad design... remove it
         # make annotations follow the rule they reference
-        
+
         last_order = None
         for r in rules:
             if not hasattr(r, 'coord'):
                 assert False, r
 
-            print(r, r.coord.order)
+            #print(r, r.coord.order)
             if last_order is not None:
                 if not (last_order < r.coord.order):
                     assert len(last_order) != r.coord.order, f"{r} {r.coord.order} {last_order}"
