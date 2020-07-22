@@ -42,13 +42,16 @@ class SExprList(object):
     def __init__(self, *args):
         self.value = args
         self.coord = None
+        self._toplevel = False
 
     def __str__(self):
-        return f"({' '.join([str(s) for s in self.value])})"
+        return f"{'@' if self._toplevel else ''}({' '.join([str(s) for s in self.value])})"
 
 
 def Anno(name, value):
-    return SExprList(Symbol(name) if isinstance(name, str) else name, *value)
+    x = SExprList(Symbol(name) if isinstance(name, str) else name, *value)
+    x._toplevel = True
+    return x
 
 # annotations start with a @ symbol as the first character of the line
 # They are followed by by S-expression list @(), that can contain the following tokens:
@@ -171,6 +174,8 @@ def parse_annotated_grammar(gr):
 
                 # we discard everything on the same line after the ending ')'
                 anno.append(p.parse(l[1:], lc, lco))
+                anno[-1]._toplevel = True
+                ebnf.extend(['']) # pretend the anno took one line, so that order doesn't get confused
             else:
                 ebnf.append(l)
     except StopIteration:
