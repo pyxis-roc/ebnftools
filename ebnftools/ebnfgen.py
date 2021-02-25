@@ -126,6 +126,25 @@ def flatten(s, out = None):
 
     return out
 
+def prefix(s, length, out = None):
+    if out is None:
+        out = []
+
+    if len(out) == length:
+        return out
+
+    if isinstance(s, str):
+        out.append(s)
+    elif isinstance(s, list):
+        assert len(s) == 0, f"Support only empty lists: {s}"
+    elif isinstance(s, tuple):
+        out = prefix(s[0], length, out)
+        out = prefix(s[1], length, out)
+    else:
+        raise ValueError(f"Support only tuples and strings {s}")
+
+    return out
+
 def test_gen():
     grammar = """
     type ::= 'u16' | 'u32' | 'u64' | 's16' | 's32' | 's64'
