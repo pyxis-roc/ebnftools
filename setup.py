@@ -1,6 +1,6 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 setup(name='ebnftools',
       version='0.1',
-      packages=['ebnftools'],
+      packages=find_packages(),
 )
