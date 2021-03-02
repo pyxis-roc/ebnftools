@@ -108,7 +108,7 @@ class AnnoParser(object):
         except StopIteration:
             raise ValueError(f"Unexpected end of input when tokenizing")
 
-    def parse(self, llstr, dataiter, linepos, token_stream = None):
+    def parse(self, llstr, dataiter, linepos, token_stream = None, depth = 0):
         start = linepos.curline
         if token_stream is None:
             token_stream = self.tokenize(llstr, dataiter)
@@ -118,10 +118,11 @@ class AnnoParser(object):
             while True:
                 tkn, match = next(token_stream)
                 if tkn == "RPAREN":
+                    assert depth > 0, f"Extra ) found in annotation starting at line {start}"
                     return SExprList(*out)
                     # TODO: possibly add a validator here?
                 elif tkn == "LPAREN":
-                    out.append(self.parse(llstr, dataiter, linepos, token_stream))
+                    out.append(self.parse(llstr, dataiter, linepos, token_stream, depth = depth + 1))
                 elif tkn == "SYMBOL":
                     out.append(Symbol(match))
                 elif tkn == "NUMBER":
@@ -173,7 +174,8 @@ def parse_annotated_grammar(gr):
             if l and l[0] == '@': # forces first character to be '@', no leading whitespace allowed
 
                 # we discard everything on the same line after the ending ')'
-                anno.append(p.parse(l[1:], lc, lco))
+                parsed_anno = p.parse(l[1:], lc, lco)
+                anno.append(parsed_anno)
                 anno[-1]._toplevel = True
                 ebnf.extend(['']) # pretend the anno took one line, so that order doesn't get confused
             else:

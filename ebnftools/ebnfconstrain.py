@@ -178,7 +178,7 @@ def parse_constraint(cons):
             assert len(x.value) == 2, f"not needs one argument: {x}"
             x = Not(parse_constraint(x.value[1]))
         elif sym == "imp":
-            assert len(x.value) == 3, f"eq needs two arguments: {x}"
+            assert len(x.value) == 3, f"imp needs two arguments: {x}"
             x = Imp(parse_constraint(x.value[1]), parse_constraint(x.value[2]))
         elif sym == "and":
             assert len(x.value) >= 3, f"and needs at least two arguments: {x}"
