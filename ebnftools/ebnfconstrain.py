@@ -79,6 +79,9 @@ class ConstraintParser(object):
                         elif sym == "or":
                             assert len(x.value) >= 3, f"or needs at least two arguments: {x}"
                             return Or(x.value[1:])
+                        elif sym == "in":
+                            assert len(x.value) >= 3, f"in needs at least three arguments: {x}"
+                            x = In(x.value[1].value, [xx for xx in x.value[2:]])
                         else:
                             raise NotImplementedError(f"Unknown symbol {x.value[0]}, in {x}")
                     else:
@@ -183,6 +186,9 @@ def parse_constraint(cons):
         elif sym == "or":
             assert len(x.value) >= 3, f"or needs at least two arguments: {x}"
             x = Or([parse_constraint(xx) for xx in x.value[1:]])
+        elif sym == "in":
+            assert len(x.value) >= 3, f"in needs at least three arguments: {x}"
+            x = In(x.value[1], [xx for xx in x.value[2:]])
         else:
             raise NotImplementedError(f"Unknown symbol {x.value[0]}, in {x}")
     else:
@@ -382,6 +388,25 @@ class Equals(object):
 
     def __str__(self):
         return f"{self.lhs} = {self.rhs}"
+
+class In(object):
+    def __init__(self, var, set_):
+        self.var = var
+        self.set_ = set_
+        for x in self.set_:
+            assert isinstance(x, String), f"Only support strings as members of sets: {x}"
+
+        self.set_ = [x.value for x in self.set_]
+
+    def children(self):
+        return [self.var]
+
+    def check(self, assignment):
+        return assignment[self.var.value] in self.set_
+
+    def __str__(self):
+        return f"{self.var} in {self.set_}"
+
 
 def get_symbols(root, out = None):
     if out is None:
