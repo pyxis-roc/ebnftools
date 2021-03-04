@@ -26,6 +26,7 @@ except ImportError:
     from ebnfanno import *
 
 import itertools
+from functools import reduce
 
 # deprecated
 class ConstraintParser(object):
@@ -186,6 +187,9 @@ def parse_constraint(cons):
         elif sym == "or":
             assert len(x.value) >= 3, f"or needs at least two arguments: {x}"
             x = Or([parse_constraint(xx) for xx in x.value[1:]])
+        elif sym == "xor":
+            assert len(x.value) >= 3, f"xor needs at least two arguments: {x}"
+            return Xor([parse_constraint(xx) for xx in x.value[1:]])
         elif sym == "in":
             assert len(x.value) >= 3, f"in needs at least three arguments: {x}"
             x = In(x.value[1], [xx for xx in x.value[2:]])
@@ -369,6 +373,19 @@ class Or(object):
 
     def __str__(self):
         return " or ".join([f"({t})" for t in self.terms])
+
+class Xor(object):
+    def __init__(self, terms):
+        self.terms = terms
+
+    def children(self):
+        return self.terms
+
+    def check(self, assignment):
+        return reduce(lambda x, y: bool(x) ^ bool(y), (t.check(assignment) for t in self.terms))
+
+    def __str__(self):
+        return " xor ".join([f"({t})" for t in self.terms])
 
 # only really works for primitive object comparisons
 class Equals(object):
