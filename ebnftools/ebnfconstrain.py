@@ -236,17 +236,17 @@ def handle_constraints(ebnf, anno):
                 if dbg: debug_constraints.add(rr)
                 constraints[rr].append(c)
 
-    ca = []
-    for r in constraints:
-        ca.append(Constraint(r, constraints[r], debug = r in debug_constraints))
-
-    cgr = None
-    constraints = ca
-
     p = EBNFParser()
     gr = '\n'.join(ebnf)
     gr = p.parse(gr)
 
+    ca = []
+    for r in constraints:
+        ca.append(Constraint(r, constraints[r], debug = r in debug_constraints))
+
+
+    cgr = None
+    constraints = ca
     cgr = apply_grammar_constraints(constraints, gr)
 
     return gr, cgr
@@ -425,7 +425,21 @@ class In(object):
         return f"{self.var} in {self.set_}"
 
 
-def get_symbols(root, out = None):
+def get_rule_symbols(root, out = None):
+    if out is None:
+        out = []
+
+    if isinstance(root, Symbol):
+        out.append(root)
+    elif isinstance(root, String):
+        pass
+    else:
+        for x in root.children:
+            get_rule_symbols(x, out)
+
+    return out
+
+def get_symbols(root, out = None): # this only works on constraint asts ...
     if out is None:
         out = []
 
@@ -474,8 +488,16 @@ def apply_constraints(grammar, rule_constraints):
     for c in rule_constraints:
         es = EnumerationSolver(grammar, c)
         out = None
+
+        rule_symbols = set([str(s) for s in get_rule_symbols(grammar[c.rule])])
+        extra_syms = es.variables - rule_symbols
+        if len(extra_syms):
+            print(f"ERROR: Constraint {c} for rule {c.rule} has extraneous symbols {extra_syms} that are not in rule. Not applying constraints for rule.")
+            continue
+
         for asgn in es.solve():
             rs = rewrite_syms(grammar[c.rule], asgn)
+
             if out is None:
                 out = rs
             else:
@@ -546,3 +568,34 @@ CONSTRAINT: x_opcode: (imp (not (eq type1 'f32')) (eq ftz_clause ''))
     print('\n'.join([str(s) for s in gr]))
     print('\n'.join([str(s) for s in cgr]))
 
+def test_constraint():
+    gr = """
+st_scope ::= '.cta' | '.gpu' | '.sys'
+atom_space ::= '.global' | '.shared'
+atom_sem ::= '.relaxed' | '.acquire' | '.release' | '.acq_rel'
+atom_scope ::= st_scope
+atom_op_binary ::= '.and' | '.or' | '.xor' | '.exch'
+atom_op_cas ::= '.cas'
+atom_op_integer ::= '.add' | '.min' | '.max'
+atom_op_uint ::= '.inc' | '.dec'
+
+atom_type_binary ::= '.b32' | '.b64'
+/* inc on shared u64 is not supported? */
+atom_type_integer ::= '.u32' | '.u64' | '.s32' | '.s64'
+atom_type_float ::= '.f32' | '.f64'
+atom_type ::= atom_type_binary | atom_type_integer | atom_type_float
+
+atom_noncas_params ::= ('_' | 'out_d_type0') ',' '[' 'in_a_type0_addr_mod' ']' ',' 'in_b_type0'
+
+atom_prefix ::= 'atom' (atom_sem)? (atom_scope)? (atom_space)?
+
+/* b32 | b64 not supported for atom_op_integer */
+atom_noncas_int_opcode ::=  atom_prefix atom_op_integer atom_type_binary
+@(CONSTRAINT_DEBUG atom_noncas_int_opcode (imp (eq atom_op_integer '.add') (not (eq atom_type_integer '.s64'))))
+"""
+
+    ebnf, anno = parse_annotated_grammar(gr)
+    gr, cgr = handle_constraints(ebnf, anno)
+    #print("\n".join([str(s) for s in gr]))
+    print("\n".join([str(s) for s in cgr]))
+    # this should result in the constraint not being applied
