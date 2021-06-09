@@ -259,8 +259,8 @@ def visit_rule_dict(grammar, node, vfn, vfn_args = [], descend_symbols = True, _
             visit_rule_dict(grammar, grammar[node.value], vfn, vfn_args, descend_symbols, _visited)
     else:
         for c in node.children:
-            # print("\tvisiting", node, c, node.children)
-            visit_rule_dict(grammar, c, vfn, vfn_args, _visited)
+            #print("\tvisiting", node, c, node.children, _visited)
+            visit_rule_dict(grammar, c, vfn, vfn_args, descend_symbols, _visited)
 
 def visit_rules(rules, start, vfn, vfn_args = []):
     grammar = dict([(r.lhs.value, r.rhs) for r in rules])
@@ -509,9 +509,10 @@ class EBNFTokenizer(object):
 
     def __init__(self, strdata, err):
         self.data = strdata
+        self.err = err
         self._token_stream = self.tokenize()
         self.token, self.match = next(self._token_stream)
-        self.err = err
+
 
     # convenience
     def error(self, message):
@@ -854,3 +855,18 @@ args ::= bnf_concat_args
 
     # shouldn't raise RecursionError
     visit_rules(rules, '*', _visit)
+
+def test_visitor_infinite_loop_2():
+    p = EBNFParser()
+    rules = p.parse("""
+ce_prod ::= '*' constexpr
+
+constexpr ::= ce_prod
+""")
+
+    def _visit(n):
+        print(n)
+
+    # shouldn't raise RecursionError
+    visit_rules(rules, '*', _visit)
+
