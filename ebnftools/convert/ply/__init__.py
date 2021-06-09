@@ -1,6 +1,7 @@
 from .. import tokens
 from ... import ebnfast
 import re
+import textwrap
 
 LEX_PROLOGUE = """#!/usr/bin/env python3
 import ply.lex as lex
@@ -17,6 +18,8 @@ if __name__ == '__main__':
 YACC_PROLOGUE = """#!/usr/bin/env python3
 import ply.yacc as yacc
 from {lexer} import tokens
+from ebnftools.convert.ply import utils
+{imports}
 
 start = '{start}'
 """
@@ -34,6 +37,12 @@ if __name__ == '__main__':
         if not s: continue
         result = parser.parse(s)
         print(result)
+        if result is not None:
+            d = utils.vis_parse_tree(result)
+            ds = "\\n".join(d)
+            with open('parsetree.dot', 'w') as f:
+                print(ds, file=f)
+
 """
 
 class LexerGen(object):
@@ -175,12 +184,111 @@ def t_{t}(t):
         out = LEX_PROLOGUE + self._generate_tokens() + self._generate_rules() + LEX_EPILOGUE
         return out
 
+class ActionGen(object):
+    def get_action(self, rule):
+        raise NotImplementedError
+
+    def get_module(self, rule):
+        return ""
+
+class PassActionGen(ActionGen):
+    def get_action(self, rule):
+        return "pass"
+
+    def get_module(self):
+        return ""
+
+class CTActionGen(ActionGen):
+    """Generates a concrete parse tree"""
+
+    def __init__(self):
+        self.classes = {}
+
+    def _get_rule_length(self, rhs):
+        if isinstance(rhs, ebnfast.Symbol):
+            return [1]
+        elif isinstance(rhs, ebnfast.String):
+            assert rhs.value == ''
+            return [0]
+        elif isinstance(rhs, ebnfast.Sequence):
+            y = self._get_rule_length(rhs.expr[0])[0] #TODO: weird
+            return [y + x for x in self._get_rule_length(rhs.expr[1])]
+        elif isinstance(rhs, ebnfast.Alternation):
+            o = self._get_rule_length(rhs.expr[0])
+            o.extend(self._get_rule_length(rhs.expr[1]))
+            return o
+        else:
+            raise NotImplementedError(f"Don't know how to handle {rhs}")
+
+    def get_action(self, rule):
+        print(rule.rhs)
+        rl = self._get_rule_length(rule.rhs)
+        rls = sorted(set(rl))
+
+        rn = str(rule.lhs)
+
+        if rn not in self.classes:
+            self.classes[rn] = (f"a_{rn}", rls)
+
+        x = f"p[0] = {self.classes[rn][0]}(p)"
+        return x
+
+    def _get_block(self, indent, *lines):
+        return textwrap.indent("\n".join(lines), '    '*indent)
+
+    def _gen_arglen_match(self, l):
+        def _match_one(rulelen):
+            if rulelen == 0:
+                return ["pass"]
+            else:
+                return [f"self.args[{i}] = p[{i+1}]" for i in range(rulelen)]
+
+        out = []
+        if len(l) == 1:
+            out = _match_one(l[0])
+        else:
+            out.append(f"if len(p) == {l[0]+1}:")
+            out.append(self._get_block(1, *_match_one(l[0])))
+
+            for ll in l[1:]:
+                out.append(f"elif len(p) == {ll+1}:")
+                out.append(self._get_block(1, *_match_one(ll)))
+
+        return "\n".join(out)
+
+
+    def get_module(self):
+        print(self.classes)
+        mod = []
+        for c in self.classes:
+            cn, args = self.classes[c]
+
+            out = [f"class {cn}:"]
+            out.append("    def __init__(self, p):")
+            out.append(self._get_block(2,
+                                       f"self.args = [None]*{max(args)}",
+                                       self._gen_arglen_match(args)))
+            out.append("")
+            out.append("    def __str__(self):")
+            out.append(self._get_block(2,
+                                       "v = ', '.join([str(s) for s in self.args])",
+                                       f"return f'{cn}({{v}})'"))
+            out.append("    __repr__ = __str__")
+            out.append("")
+
+            mod.extend(out)
+
+        return "\n".join(mod)
+
+
 class ParserGen(object):
-    def __init__(self, treg, bnf, start_symbol):
+    def __init__(self, treg, bnf, start_symbol, actiongen = None, handlermod = None):
         self.bnf = bnf
         self.treg = treg
         self.start = start_symbol
         self.bnfgr = dict([(r.lhs.value, r.rhs) for r in self.bnf])
+        self.actiongen = actiongen if actiongen is not None else PassActionGen()
+        self.handlermod = handlermod
 
     def _get_reachable_symbols(self):
         def _visit(n):
@@ -190,7 +298,7 @@ class ParserGen(object):
                         reachable.add(n.value)
                         dfs.insert(0, n.value)
 
-        reachable = set()
+        reachable = set([self.start])
         dfs = [self.start]
         ebnfast.visit_rule_dict(self.bnfgr, self.bnfgr[self.start], _visit)
         return dfs
@@ -236,18 +344,30 @@ class ParserGen(object):
 # {original}
 def p_{nonterminal}(p):
     {bnfrule}
-    pass
+    {action}
 """
         out = []
         for s in self._get_reachable_symbols():
             tv = {}
+            rl = ebnfast.Rule(ebnfast.Symbol(s), self.bnfgr[s])
             tv['original'] = str(self.bnfgr[s])
             tv['nonterminal'] = s
-            tv['bnfrule'] = self._get_rule(ebnfast.Rule(ebnfast.Symbol(s), self.bnfgr[s]))
+            tv['bnfrule'] = self._get_rule(rl)
+            tv['action'] = self.actiongen.get_action(rl)
             out.append(template.format(**tv))
 
         return "\n\n".join(out)
 
     def get_parser(self, lexer):
-        out = YACC_PROLOGUE.format(lexer=lexer, start=self.start) + self.get_parse_rules() + YACC_EPILOGUE
+        if self.handlermod:
+            imports = [f'from {self.handlermod} import *']
+        else:
+            imports = []
+
+        imports = '\n'.join(imports)
+
+        out = YACC_PROLOGUE.format(lexer=lexer, start=self.start, imports=imports) + self.get_parse_rules() + YACC_EPILOGUE
         return out
+
+    def get_action_module(self):
+        return self.actiongen.get_module()
