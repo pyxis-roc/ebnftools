@@ -38,7 +38,7 @@ if __name__ == '__main__':
         if not s: continue
         result = parser.parse(s)
         print(result)
-        if result is not None:
+        if result is not None and hasattr(result, 'args'):
             d = utils.vis_parse_tree(result)
             ds = "\\n".join(d)
             with open('parsetree.dot', 'w') as f:
@@ -215,8 +215,9 @@ class PassActionGen(ActionGen):
 class CTActionGen(ActionGen):
     """Generates a concrete parse tree"""
 
-    def __init__(self):
+    def __init__(self, abstract = False):
         self.classes = {}
+        self.abstract = abstract # generate an AST by calling abstract()
 
     def _get_rule_length(self, rhs):
         if isinstance(rhs, ebnfast.Symbol):
@@ -234,6 +235,15 @@ class CTActionGen(ActionGen):
         else:
             raise NotImplementedError(f"Don't know how to handle {rhs}")
 
+    def _is_opt_rule(self, rule):
+        # TODO: actually check for an empty string
+        if isinstance(rule.rhs, ebnfast.Alternation):
+            if isinstance(rule.rhs.expr[0], ebnfast.String):
+                if rule.rhs.expr[0].value == '':
+                    return True
+
+        return False
+
     def get_action(self, rule):
         rl = self._get_rule_length(rule.rhs)
         rls = sorted(set(rl))
@@ -241,10 +251,20 @@ class CTActionGen(ActionGen):
         rn = str(rule.lhs)
 
         if rn not in self.classes:
-            self.classes[rn] = (f"a_{rn}", rls)
+            self.classes[rn] = (f"a_{rn}", rls, rule)
 
-        x = f"p[0] = {self.classes[rn][0]}(p)"
-        return x
+        out = []
+        action = f"{self.classes[rn][0]}(p)"
+        if self.abstract:
+            action += ".abstract()"
+
+        if self._is_opt_rule(rule):
+            # non-empty matches have a len of 2
+            out.append(f"p[0] = None if (len(p) == 1) else {action}")
+        else:
+            out.append(f"p[0] = {action}")
+
+        return "\n".join(out)
 
     def _get_block(self, indent, *lines):
         return textwrap.indent("\n".join(lines), '    '*indent)
@@ -272,8 +292,9 @@ class CTActionGen(ActionGen):
 
     def get_module(self):
         mod = []
+
         for c in self.classes:
-            cn, args = self.classes[c]
+            cn, args, rule = self.classes[c]
 
             out = [f"class {cn}:"]
             out.append("    def __init__(self, p):")
@@ -358,7 +379,7 @@ class ParserGen(object):
 # {original}
 def p_{nonterminal}(p):
     {bnfrule}
-    {action}
+{action}
 """
         out = []
         for s in self._get_reachable_symbols():
@@ -367,7 +388,7 @@ def p_{nonterminal}(p):
             tv['original'] = str(self.bnfgr[s])
             tv['nonterminal'] = s
             tv['bnfrule'] = self._get_rule(rl)
-            tv['action'] = self.actiongen.get_action(rl)
+            tv['action'] = textwrap.indent(self.actiongen.get_action(rl), ' '*4)
             out.append(template.format(**tv))
 
         return "\n\n".join(out)

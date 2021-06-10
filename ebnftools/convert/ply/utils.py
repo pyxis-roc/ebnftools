@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
 
+def make_concat_list(ct):
+    """Convert the concrete parse tree of a bnf_concat_* rule into a list"""
+
+    x = ct
+    while x is not None:
+        yield x.args[0]
+        x = x.args[1]
+
 def vis_parse_tree(root, out = None):
     is_root = False
 
