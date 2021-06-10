@@ -33,3 +33,26 @@ def vis_parse_tree(root, out = None):
         return out
     else:
         return nid
+
+def visit_abstract(root):
+    if not hasattr(root, 'abstract'):
+        return root
+
+    if not hasattr(root, 'args'):
+        return root
+
+    if len(root.args) == 0:
+        if hasattr(root, 'abstract'):
+            return root.abstract()
+        else:
+            return root
+    else:
+        out = []
+        for x in root.args:
+            if x is not None:
+                out.append(visit_abstract(x))
+            else:
+                out.append(x)
+
+        root.args = out
+        return root.abstract()

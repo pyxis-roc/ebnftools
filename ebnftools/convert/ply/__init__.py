@@ -5,6 +5,7 @@ import textwrap
 
 LEX_PROLOGUE = """#!/usr/bin/env python3
 import ply.lex as lex
+{leximports}
 """
 
 LEX_EPILOGUE = """
@@ -43,13 +44,18 @@ if __name__ == '__main__':
             with open('parsetree.dot', 'w') as f:
                 print(ds, file=f)
 
+        print(utils.visit_abstract(result))
+
+
 """
 
 class LexerGen(object):
-    def __init__(self, tokenreg):
+    def __init__(self, tokenreg, action_tokens = None, lexermod = None):
         self.treg = tokenreg
         self.indirect_tokens = {}
         self.ignore_tokens = set()
+        self.action_tokens = action_tokens if action_tokens is not None else {}
+        self.lexermod = lexermod
 
     def add_indirect(self, token, indirect_token):
         self.indirect_tokens[token] = indirect_token
@@ -147,7 +153,15 @@ def t_{t}(t):
                 token_types['re'].append((t, re))
 
         for (t, re) in token_types['re']:
-            out.append(f't_{t} = {re}')
+            if t not in self.action_tokens:
+                out.append(f't_{t} = {re}')
+            else:
+                out.append(f"""
+def t_{t}(t):
+    {re}
+    t.value = {self.action_tokens[t]}(t.value)
+    return t
+""")
 
         # prioritize string literals over regular expressions by
         # converting them to functions. Indirect rules are not
@@ -158,7 +172,6 @@ def t_{t}(t):
 def t_{t}(t):
     {re}
     return t
-
 """
             out.append(f)
 
@@ -181,7 +194,8 @@ def t_{t}(t):
         return self._generate_ignore_rules() + self._gen_simple_rules() + self._gen_indirect_rules()
 
     def get_lexer(self):
-        out = LEX_PROLOGUE + self._generate_tokens() + self._generate_rules() + LEX_EPILOGUE
+        leximports = f"from {self.lexermod} import *" if self.lexermod else ""
+        out = LEX_PROLOGUE.format(leximports=leximports) + self._generate_tokens() + self._generate_rules() + LEX_EPILOGUE
         return out
 
 class ActionGen(object):
@@ -221,7 +235,6 @@ class CTActionGen(ActionGen):
             raise NotImplementedError(f"Don't know how to handle {rhs}")
 
     def get_action(self, rule):
-        print(rule.rhs)
         rl = self._get_rule_length(rule.rhs)
         rls = sorted(set(rl))
 
@@ -258,7 +271,6 @@ class CTActionGen(ActionGen):
 
 
     def get_module(self):
-        print(self.classes)
         mod = []
         for c in self.classes:
             cn, args = self.classes[c]
@@ -274,6 +286,8 @@ class CTActionGen(ActionGen):
                                        "v = ', '.join([str(s) for s in self.args])",
                                        f"return f'{cn}({{v}})'"))
             out.append("    __repr__ = __str__")
+            out.append("    def abstract(self):")
+            out.append(self._get_block(2, "return self"))
             out.append("")
 
             mod.extend(out)
