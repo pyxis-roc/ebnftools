@@ -49,6 +49,31 @@ if __name__ == '__main__':
 
 """
 
+class IndirectRule:
+    def __init__(self, tmap, fn):
+        self.tmap = tmap
+        self.fn = fn
+
+    def get_code(self):
+        out = []
+        out.append(self.tmap)
+        out.append(self.fn)
+        return out
+
+class RegexpRule:
+    def __init__(self, rule):
+        self.rule = rule
+
+    def get_code(self):
+        return [self.rule]
+
+class FunctionRule:
+    def __init__(self, fn):
+        self.fn = fn
+
+    def get_code(self):
+        return [self.fn]
+
 class LexerGen(object):
     def __init__(self, tokenreg, action_tokens = None, lexermod = None):
         self.treg = tokenreg
@@ -56,6 +81,11 @@ class LexerGen(object):
         self.ignore_tokens = set()
         self.action_tokens = action_tokens if action_tokens is not None else {}
         self.lexermod = lexermod
+        self.gen = {}
+
+    def gen_rule(self, tkn, rule):
+        assert tkn not in self.gen, f"Duplicate code generation"
+        self.gen[tkn] = rule
 
     def add_indirect(self, token, indirect_token):
         self.indirect_tokens[token] = indirect_token
@@ -115,7 +145,6 @@ class LexerGen(object):
         for k in self.indirect_tokens:
             buckets[self.indirect_tokens[k]].append(k)
 
-        out2 = []
         for t in buckets:
             out = []
             for k in buckets[t]:
@@ -125,7 +154,6 @@ class LexerGen(object):
                 out.append(f"{value}: '{k}'")
 
             out = ',\n'.join(out)
-            out2.append(f"indirect_{t} = {{{out}}}")
 
             fn = f"""
 def t_{t}(t):
@@ -133,16 +161,16 @@ def t_{t}(t):
     t.type = indirect_{t}.get(t.value, '{t}')
     return t
 """
-            out2.append(fn)
+            tdict = f"indirect_{t} = {{{out}}}"
+            self.gen_rule(t, IndirectRule(tdict, fn))
 
-        return "\n".join(out2) + "\n\n"
+        return
 
     def _gen_simple_rules(self):
         simple_tokens = self.treg.tokens - set(self.indirect_tokens.keys()).union(self.indirect_tokens.values()).union(self.ignore_tokens)
 
         token_types = {'literals': [], 're': []}
 
-        out = []
         for t in self.treg.read_order:
             if t not in simple_tokens: continue
 
@@ -156,14 +184,15 @@ def t_{t}(t):
 
         for (t, re) in token_types['re']:
             if t not in self.action_tokens:
-                out.append(f't_{t} = {re}')
+                self.gen_rule(t, RegexpRule(f't_{t} = {re}'))
             else:
-                out.append(f"""
+                fn = f"""
 def t_{t}(t):
     {re}
     t.value = {self.action_tokens[t]}(t.value)
     return t
-""")
+"""
+                self.gen_rule(t, FunctionRule(fn))
 
         # prioritize string literals over regular expressions by
         # converting them to functions. Indirect rules are not
@@ -175,12 +204,11 @@ def t_{t}(t):
     {re}
     return t
 """
-            out.append(f)
+            self.gen_rule(t, FunctionRule(f))
 
-        return "\n".join(out) + "\n\n"
+        return
 
     def _generate_ignore_rules(self):
-        out = []
         for t in self.ignore_tokens:
             re = self._get_re(self.treg.n2v[t])
             f = f"""
@@ -188,12 +216,23 @@ def t_{t}(t):
    {re}
    return None
 """
-            out.append(f)
+            self.gen_rule(t, FunctionRule(f))
 
-        return "\n".join(out)  + "\n\n"
+        return
 
     def _generate_rules(self):
-        return self._generate_ignore_rules() + self._gen_simple_rules() + self._gen_indirect_rules()
+        self.gen = {}
+        self._generate_ignore_rules()
+        self._gen_simple_rules()
+        self._gen_indirect_rules()
+
+        out = []
+        for t in self.treg.read_order:
+            if t in self.gen:
+                out.extend(self.gen[t].get_code())
+
+        code = "\n".join(out)
+        return code
 
     def get_lexer(self):
         leximports = f"from {self.lexermod} import *" if self.lexermod else ""
