@@ -47,6 +47,7 @@ class TokenRegistry(object):
         self.v2n = {}
         self.n2v = {}
         self.read_order = []
+        self.renamed = {}
 
     def remove(self, token):
         if token not in self.tokens:
@@ -116,9 +117,26 @@ class TokenRegistry(object):
         self.tokens = tokens
         self.read_order = order
 
+    def rename(self, old, new):
+        print(f"renaming {old} -> {new}")
+        self.renamed[old] = new
+
     def write(self, filename = None):
         if filename is None: filename = self.fn
 
         with open(filename, "w") as f:
             for s, t in self.v2n.items():
                 print(f"{t} {s}", file=f)
+
+    def write_ordered(self, filename = None):
+        if filename is None: filename = self.fn
+        assert len(self.read_order) == len(self.n2v), f"ERROR: Read order and token registry are not coherent"
+
+        with open(filename, "w") as f:
+            for t in self.read_order:
+                if t in self.renamed:
+                    t = self.renamed[t]
+
+                s = self.n2v[t]
+                print(f"{t} {s}", file=f)
+
