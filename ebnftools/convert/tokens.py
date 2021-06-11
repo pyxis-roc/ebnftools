@@ -46,6 +46,7 @@ class TokenRegistry(object):
         self.tokens = set()
         self.v2n = {}
         self.n2v = {}
+        self.read_order = []
 
     def remove(self, token):
         if token not in self.tokens:
@@ -76,6 +77,7 @@ class TokenRegistry(object):
         v2n = {}
         n2v = {}
         tokens = set()
+        order = []
 
         with open(self.fn, "r") as f:
             for lno, l in enumerate(f, 1):
@@ -107,10 +109,12 @@ class TokenRegistry(object):
                 v2n[value.key()] = name
                 n2v[name] = value
                 tokens.add(name)
+                order.append(name)
 
         self.v2n = v2n
         self.n2v = n2v
         self.tokens = tokens
+        self.read_order = order
 
     def write(self, filename = None):
         if filename is None: filename = self.fn

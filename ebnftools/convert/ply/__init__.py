@@ -143,7 +143,9 @@ def t_{t}(t):
         token_types = {'literals': [], 're': []}
 
         out = []
-        for t in simple_tokens:
+        for t in self.treg.read_order:
+            if t not in simple_tokens: continue
+
             v = self.treg.n2v[t]
             re = self._get_re(v)
 
