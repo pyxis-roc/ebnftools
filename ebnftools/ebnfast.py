@@ -426,7 +426,7 @@ class EBNFTransformer(object):
         return node
 
     def visit_Optional(self, node):
-        self.expr = self.visit(node.expr)
+        node.expr = self.visit(node.expr)
         return node
 
     def visit_CharClass(self, node):
