@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 
-def make_concat_list(ct):
+def make_concat_list(ct, sel=None):
     """Convert the concrete parse tree of a bnf_concat_* rule into a list"""
 
+    #import pdb
+    #pdb.set_trace()
+
     x = ct
+    if sel is None: sel = range(0,len(ct.args)-1)
     while x is not None:
-        yield x.args[0]
-        x = x.args[1]
+        for andx in sel:
+            yield x.args[andx]
+        x = x.args[-1]
 
 def vis_parse_tree(root, out = None):
     is_root = False
@@ -14,6 +19,10 @@ def vis_parse_tree(root, out = None):
     if out is None:
         out = ["digraph {"]
         is_root = True
+
+    if not hasattr(root, 'args'):
+        print(f"ERROR: {root} has no 'args' attribute. Visualization will be garbled")
+        return ""
 
     if root is None:
         nid = f"none_{len(out)}"
@@ -27,7 +36,12 @@ def vis_parse_tree(root, out = None):
             cids.append(vis_parse_tree(c, out))
 
         if not hasattr(root, '_dotid'):
-            root._dotid = f"node_{len(out)}"
+            try:
+                root._dotid = f"node_{len(out)}"
+            except AttributeError:
+                print(f"ERROR: Could not set rootid. Visualization will be garbled")
+                return ""
+
             n = root.__class__.__name__
             out.append(f'{root._dotid} [label="{n}"];')
 
