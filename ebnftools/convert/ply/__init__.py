@@ -262,7 +262,13 @@ class CTActionGen(ActionGen):
 
         if self._is_opt_rule(rule):
             # non-empty matches have a len of 2
-            out.append(f"p[0] = None if (len(p) == 1) else {action}")
+            if isinstance(rule.rhs.expr[1], ebnfast.Symbol):
+                # format is 'symbol?', where symbol is a top-level
+                # rule, so just pass it on instead of creating an
+                # concrete syntree node for this.
+                out.append(f"p[0] = None if (len(p) == 1) else p[1]")
+            else:
+                out.append(f"p[0] = None if (len(p) == 1) else {action}")
         else:
             out.append(f"p[0] = {action}")
 
