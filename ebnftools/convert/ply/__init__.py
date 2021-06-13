@@ -82,6 +82,8 @@ class LexerGen(object):
         self.action_tokens = action_tokens if action_tokens is not None else {}
         self.lexermod = lexermod
         self.gen = {}
+        self.track_lines = True
+        self.t_error = None
 
     def gen_rule(self, tkn, rule):
         assert tkn not in self.gen, f"Duplicate code generation"
@@ -227,6 +229,15 @@ def t_{t}(t):
         self._gen_indirect_rules()
 
         out = []
+        if self.track_lines:
+            out.append(f"""
+def t_newline(t):
+   r"\\n+"
+   t.lexer.lineno += len(t.value)
+""")
+        if self.t_error:
+            out.append(self.t_error)
+
         for t in self.treg.read_order:
             if t in self.gen:
                 out.extend(self.gen[t].get_code())

@@ -164,18 +164,29 @@ class BinOp(Expression):
         return self.expr
 
     def __str__(self):
-        x1 = self.paren(self.expr[0])
-        x2 = self.paren(self.expr[1])
-        o = self.op
-        #return f"{x1}{self.op}{x2}"
+        if False:
+            x1 = self.paren(self.expr[0])
+            x2 = self.paren(self.expr[1])
+            o = self.op
+            #return f"{x1}{self.op}{x2}"
 
-        if self.op == ' | ':
-            # only do this if we were top-level
-            #if len(x1) > 50:
-            #    o = '\n        | '
-            pass
+            if self.op == ' | ':
+                # only do this if we were top-level
+                #if len(x1) > 50:
+                #    o = '\n        | '
+                pass
 
-        return f"{x1}{o}{x2}"
+            return f"{x1}{o}{x2}"
+        else:
+            out = []
+            n = self
+            while isinstance(n, BinOp) and n.op == self.op:
+                out.append(n.paren(n.expr[0]))
+                n = n.expr[1]
+
+            out.append(self.paren(n))
+
+            return f" {self.op} ".join(out)
 
     def __repr__(self):
         return f"{self.__classname__}({repr(self.expr[0])}, {repr(self.expr[1])})"
