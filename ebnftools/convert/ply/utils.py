@@ -3,15 +3,24 @@
 def make_concat_list(ct, sel=None):
     """Convert the concrete parse tree of a bnf_concat_* rule into a list"""
 
-    #import pdb
-    #pdb.set_trace()
-
     x = ct
     if sel is None: sel = range(0,len(ct.args)-1)
     while x is not None:
         for andx in sel:
             yield x.args[andx]
         x = x.args[-1]
+
+def dfs_token_list_rec(ct):
+    """Construct a flat list of all the string tokens encountered in a concrete parse tree."""
+
+    out = []
+    for x in ct.args:
+        if isinstance(x, str):
+            out.append(x)
+        elif not (x is None):
+            out.extend(dfs_token_list_rec(x))
+
+    return out
 
 def vis_parse_tree(root, out = None):
     is_root = False
