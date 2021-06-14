@@ -157,10 +157,17 @@ class LexerGen(object):
 
             out = ',\n'.join(out)
 
+            if t in self.action_tokens:
+                # we only invoke the action if t's type is preserved by the map
+                action = f"if t.type == {repr(t)}: t.value = {self.action_tokens[t]}(t.value)"
+            else:
+                action = ""
+
             fn = f"""
 def t_{t}(t):
     {self._get_re(self.treg.n2v[t])}
     t.type = indirect_{t}.get(t.value, '{t}')
+    {action}
     return t
 """
             tdict = f"indirect_{t} = {{{out}}}"
