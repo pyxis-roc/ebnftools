@@ -85,8 +85,11 @@ class TokenRegistry(object):
                 ls = l.strip().split(' ', 1)
                 if ls[0] == "#": continue
 
-                if not (ls[1] and  ls[0]):
-                    raise ValueError(f"ERROR:{lno}: Line is malformed, empty value ({value}) and/or token name ({name})")
+                if len(ls) < 2:
+                    raise ValueError(f"ERROR:{lno}: Line is malformed, empty value and/or token name")
+
+                if not (ls[1] and ls[0]):
+                    raise ValueError(f"ERROR:{lno}: Line is malformed, empty value ({ls[1]}) and/or token name ({ls[0]})")
 
                 name, value = ls[0], ls[1]
                 if value in v2n:
