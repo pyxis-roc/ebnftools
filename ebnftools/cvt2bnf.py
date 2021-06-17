@@ -106,6 +106,8 @@ if __name__ == "__main__":
                    help="Check that resulting BNF is `equivalent' (when possible)")
     p.add_argument("--token-out", help="Don't rewrite input tokens file", default=None)
 
+    sys.setrecursionlimit(15000)
+
     args = p.parse_args()
 
     pr = ebnfgrammar.EBNFAnnotatedGrammar()
