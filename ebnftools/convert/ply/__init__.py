@@ -5,6 +5,7 @@ import textwrap
 
 LEX_PROLOGUE = """#!/usr/bin/env python3
 import ply.lex as lex
+import sys
 {leximports}
 """
 
@@ -18,8 +19,9 @@ if __name__ == '__main__':
 
 YACC_PROLOGUE = """#!/usr/bin/env python3
 import ply.yacc as yacc
-from {lexer} import tokens
+from {lexer} import tokens, lexer
 from ebnftools.convert.ply import utils
+import sys
 {imports}
 
 start = '{start}'
@@ -389,6 +391,7 @@ class ParserGen(object):
         self.bnfgr = dict([(r.lhs.value, r.rhs) for r in self.bnf])
         self.actiongen = actiongen if actiongen is not None else PassActionGen()
         self.handlermod = handlermod
+        self.p_error = None
 
     def _get_reachable_symbols(self):
         def _visit(n):
@@ -466,7 +469,9 @@ def p_{nonterminal}(p):
 
         imports = '\n'.join(imports)
 
-        out = YACC_PROLOGUE.format(lexer=lexer, start=self.start, imports=imports) + self.get_parse_rules() + YACC_EPILOGUE
+        p_error = self.p_error if self.p_error is not None else ""
+
+        out = YACC_PROLOGUE.format(lexer=lexer, start=self.start, imports=imports) + p_error + self.get_parse_rules() + YACC_EPILOGUE
         return out
 
     def get_action_module(self):
