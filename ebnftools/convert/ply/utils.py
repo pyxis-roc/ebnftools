@@ -3,6 +3,9 @@
 def make_concat_list(ct, sel=None):
     """Convert the concrete parse tree of a bnf_concat_* rule into a list"""
 
+    if ct is None:
+        return
+
     x = ct
     if sel is None: sel = range(0,len(ct.args)-1)
     while x is not None:
@@ -21,6 +24,8 @@ def dfs_token_list_rec(ct):
             out.extend(dfs_token_list_rec(x))
 
     return out
+
+dfs_token_list = dfs_token_list_rec
 
 def vis_parse_tree(root, out = None):
     is_root = False
