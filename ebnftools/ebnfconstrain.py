@@ -489,8 +489,11 @@ def apply_constraints(grammar, rule_constraints):
         es = EnumerationSolver(grammar, c)
         out = None
 
+        # this only does one level deep, because of limitations in rewriting
         rule_symbols = set([str(s) for s in get_rule_symbols(grammar[c.rule])])
+
         extra_syms = es.variables - rule_symbols
+
         if len(extra_syms):
             print(f"ERROR: Constraint {c} for rule {c.rule} has extraneous symbols {extra_syms} that are not in rule. Not applying constraints for rule.")
             continue
