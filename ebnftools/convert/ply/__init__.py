@@ -10,7 +10,7 @@ import sys
 """
 
 LEX_EPILOGUE = """
-lexer = lex.lex()
+lexer = lex.lex(optimize=1)
 
 if __name__ == '__main__':
     lex.runmain()
@@ -77,12 +77,13 @@ class FunctionRule:
         return [self.fn]
 
 class LexerGen(object):
-    def __init__(self, tokenreg, action_tokens = None, lexermod = None):
+    def __init__(self, tokenreg, action_tokens = None, lexermod = None, modpath=None):
         self.treg = tokenreg
         self.indirect_tokens = {}
         self.ignore_tokens = set()
         self.action_tokens = action_tokens if action_tokens is not None else {}
         self.lexermod = lexermod
+        self.modpath = modpath if modpath else ''
         self.gen = {}
         self.track_lines = True
         self.t_error = None
@@ -255,7 +256,7 @@ def t_newline(t):
         return code
 
     def get_lexer(self):
-        leximports = f"from {self.lexermod} import *" if self.lexermod else ""
+        leximports = f"from {self.modpath}{self.lexermod} import *" if self.lexermod else ""
         out = LEX_PROLOGUE.format(leximports=leximports) + self._generate_tokens() + self._generate_rules() + LEX_EPILOGUE
         return out
 
@@ -384,13 +385,14 @@ class CTActionGen(ActionGen):
 
 
 class ParserGen(object):
-    def __init__(self, treg, bnf, start_symbol, actiongen = None, handlermod = None):
+    def __init__(self, treg, bnf, start_symbol, actiongen = None, handlermod = None, modpath = None):
         self.bnf = bnf
         self.treg = treg
         self.start = start_symbol
         self.bnfgr = dict([(r.lhs.value, r.rhs) for r in self.bnf])
         self.actiongen = actiongen if actiongen is not None else PassActionGen()
         self.handlermod = handlermod
+        self.modpath = modpath if modpath else ''
         self.p_error = None
 
     def _get_reachable_symbols(self):
@@ -463,7 +465,7 @@ def p_{nonterminal}(p):
 
     def get_parser(self, lexer):
         if self.handlermod:
-            imports = [f'from {self.handlermod} import *']
+            imports = [f'from {self.modpath}{self.handlermod} import *']
         else:
             imports = []
 
