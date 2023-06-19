@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2021 University of Rochester
+#
+# SPDX-License-Identifier: MIT
+
 from .. import tokens
 from ... import ebnfast
 import re

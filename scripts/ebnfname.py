@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 
+# SPDX-FileCopyrightText: 2020 University of Rochester
+#
+# SPDX-License-Identifier: MIT
+
 from ebnftools.ebnfgrammar import EBNFAnnotatedGrammar
 from ebnftools.ebnfast import *
 import ebnftools.anno.names as ebnfnames

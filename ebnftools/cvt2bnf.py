@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 
+# SPDX-FileCopyrightText: 2020,2021,2023 University of Rochester
+#
+# SPDX-License-Identifier: MIT
+
 from ebnftools import ebnfast, ebnfgrammar
 from ebnftools.ebnfanno import Anno, SExprList, Symbol
 from ebnftools.ebnfgen import isfinite, count, generate2, flatten

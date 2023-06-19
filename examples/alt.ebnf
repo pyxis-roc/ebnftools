@@ -1,3 +1,6 @@
+/* SPDX-FileCopyrightText: 2020 University of Rochester */
+/* SPDX-License-Identifier: MIT */
+
 alt1 ::= A | B
 alt2 ::= A | B | C
 alt3 ::= (A | B) | C

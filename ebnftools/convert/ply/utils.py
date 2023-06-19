@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 
+# SPDX-FileCopyrightText: 2021 University of Rochester
+#
+# SPDX-License-Identifier: MIT
+
 def make_concat_list(ct, sel=None):
     """Convert the concrete parse tree of a bnf_concat_* rule into a list"""
 

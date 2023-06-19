@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 
+# SPDX-FileCopyrightText: 2020 University of Rochester
+#
+# SPDX-License-Identifier: MIT
+
 import argparse
 from ebnftools.ebnfast import EBNFParser, generate_dot, generate_graph
 from ebnftools.ebnfgrammar import EBNFAnnotatedGrammar
